@@ -3,7 +3,8 @@ import type { LyricData } from "@shared/types/lyrics";
 import type { Platform } from "@shared/types/platform";
 import type { VoiceHubSong, VoiceHubScheduleItem, VoiceHubNowPlayingEvent } from "@shared/types/voicehub";
 import { useMediaStore } from "@/stores/media";
-import { load as loadAudio } from "@/core/player";
+import { setQueue } from "@/stores/queue";
+import { load as loadAudio, setRepeatMode } from "@/core/player";
 import { setPlayerExpanded } from "@/services/playerTransition";
 
 /** VoiceHub 平台映射到内部 Platform 枚举 */
@@ -28,8 +29,13 @@ let unsubConfig: (() => void) | null = null;
 let unsubOpenPlayer: (() => void) | null = null;
 /** 切歌竞态令牌 */
 let token = 0;
+/** 上次构建队列的签名（当日排期 id 序列），变化才重建 */
+let lastQueueSig = "";
 
-/** 处理主进程推送的当前曲目：解析直链交引擎播放，歌词写入 media store（其内部解析并同步 nowPlaying） */
+/** 由当日排期构建 Track 列表（供 FullPlayer / 队列面板展示） */
+const buildTracks = (items: VoiceHubScheduleItem[]): Track[] => items.map((i) => toTrack(i.song));
+
+/** 处理主进程推送的当前曲目：构建当天队列 + 直链交引擎播放 + 歌词写入 media store */
 const handleNowPlaying = async (
   event: VoiceHubNowPlayingEvent & { playUrl: string | null },
 ): Promise<void> => {
@@ -42,6 +48,18 @@ const handleNowPlaying = async (
   if (!event.inWindow || !item) {
     media.clear();
     return;
+  }
+
+  // 构建/刷新当天歌单队列（仅可定时曲目）；设单曲循环防止 SPlayer 用自身解析自动切歌
+  const sig = event.queue.map((q) => q.id).join(",");
+  if (sig && sig !== lastQueueSig) {
+    setQueue(buildTracks(event.queue), {
+      originId: "voicehub",
+      originType: "page",
+      originName: "广播站排期",
+    });
+    setRepeatMode("one");
+    lastQueueSig = sig;
   }
 
   const song = item.song as VoiceHubSong;
@@ -73,7 +91,8 @@ export const startVoiceHubController = (): void => {
     void handleNowPlaying(data).catch((err) => console.warn("[voicehub] 播放失败:", err)),
   );
   unsubConfig = window.api.voicehub.onConfigChange(() => {
-    // 切出 audio 模式时清空由本控制器写入的播放态，交回主进程/引擎
+    // 配置变更（含切模式）后重置队列签名，下次事件重建；主进程 resetScheduler 会重新推送当前曲
+    lastQueueSig = "";
     void (async () => {
       const cfg = (await window.api.config.get("voicehub")) as { mode: string };
       if (cfg?.mode !== "audio") useMediaStore().clear();
