@@ -103,6 +103,7 @@ export interface VoiceHubApi {
     callback: (data: VoiceHubNowPlayingEvent & { playUrl: string | null }) => void,
   ) => () => void;
   onConfigChange: (callback: (data: VoiceHubSettingsLike) => void) => () => void;
+  onOpenPlayer: (callback: () => void) => () => void;
 }
 
 /** 配置变更广播的松散结构 */
@@ -112,7 +113,7 @@ export type VoiceHubSettingsLike = {
   mode: "display" | "audio" | "site";
   pollIntervalSec: number;
   autoPopup: boolean;
-  popupView: "desktopLyric" | "main";
+  popupView: "player+taskbar" | "taskbarLyric" | "player" | "desktopLyric";
   playTimeId: number | "all";
   defaultStartTime: string;
   cookie: string;

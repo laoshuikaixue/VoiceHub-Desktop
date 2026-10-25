@@ -381,7 +381,7 @@ export interface DownloadSettings {
 export type VoiceHubMode = "display" | "audio" | "site";
 
 /** 到点弹窗展示的视图 */
-export type VoiceHubPopupView = "desktopLyric" | "main";
+export type VoiceHubPopupView = "player+taskbar" | "taskbarLyric" | "player" | "desktopLyric";
 
 /** VoiceHub 集成配置 */
 export interface VoiceHubSettings {

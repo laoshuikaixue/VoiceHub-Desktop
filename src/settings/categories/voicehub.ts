@@ -42,10 +42,12 @@ const voicehubCategory: SettingCategory = {
           key: "voicehubPopupView",
           type: "select",
           binding: { store: "settings", path: "system.voicehub.popupView" },
-          defaultValue: "desktopLyric",
+          defaultValue: "player+taskbar",
           options: [
+            { value: "player+taskbar", labelKey: "settings.voicehubPopupView.playerTaskbar" },
+            { value: "taskbarLyric", labelKey: "settings.voicehubPopupView.taskbarLyric" },
+            { value: "player", labelKey: "settings.voicehubPopupView.player" },
             { value: "desktopLyric", labelKey: "settings.voicehubPopupView.desktopLyric" },
-            { value: "main", labelKey: "settings.voicehubPopupView.main" },
           ],
         },
         {

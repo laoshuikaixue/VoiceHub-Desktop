@@ -9,10 +9,12 @@ import type {
 } from "@shared/types/voicehub";
 import { store } from "@main/store";
 import { broadcast } from "@main/utils/broadcast";
+import { isWin } from "@main/utils/config";
 import * as nowPlaying from "@main/services/nowPlaying";
 import {
   createDesktopLyricWindow,
   getDesktopLyricWindow,
+  createTaskbarLyricWindow,
   focusMainWindow,
 } from "@main/window";
 import * as api from "./api";
@@ -212,15 +214,23 @@ const maybePopup = (entry: TimedEntry): void => {
   if (lastPoppedBlockStart === entry.blockStartMs) return;
   lastPoppedBlockStart = entry.blockStartMs;
   const view = store.get("voicehub.popupView");
-  if (view === "main") {
-    focusMainWindow();
-    return;
+  const openDesktop = view === "desktopLyric";
+  const openTaskbar = view === "taskbarLyric" || view === "player+taskbar";
+  const openPlayer = view === "player" || view === "player+taskbar";
+  if (openDesktop) {
+    const win = getDesktopLyricWindow();
+    if (win && !win.isDestroyed()) {
+      if (!win.isVisible()) win.showInactive();
+    } else {
+      createDesktopLyricWindow();
+    }
   }
-  const win = getDesktopLyricWindow();
-  if (win && !win.isDestroyed()) {
-    if (!win.isVisible()) win.showInactive();
-  } else {
-    createDesktopLyricWindow();
+  // 任务栏歌词仅 Windows；createTaskbarLyricWindow 内部已幂等处理已存在的情况
+  if (openTaskbar && isWin) createTaskbarLyricWindow();
+  // 软件播放页：聚焦主窗口并通知渲染端展开全屏歌词页
+  if (openPlayer) {
+    focusMainWindow();
+    broadcast("voicehub:openPlayer", null);
   }
 };
 

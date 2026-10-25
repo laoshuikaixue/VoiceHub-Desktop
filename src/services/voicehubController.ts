@@ -4,6 +4,7 @@ import type { Platform } from "@shared/types/platform";
 import type { VoiceHubSong, VoiceHubScheduleItem, VoiceHubNowPlayingEvent } from "@shared/types/voicehub";
 import { useMediaStore } from "@/stores/media";
 import { load as loadAudio } from "@/core/player";
+import { setPlayerExpanded } from "@/services/playerTransition";
 
 /** VoiceHub 平台映射到内部 Platform 枚举 */
 const mapPlatform = (platform: string | null): Platform => {
@@ -24,6 +25,7 @@ const toTrack = (song: VoiceHubSong): Track => ({
 
 let unsubNowPlaying: (() => void) | null = null;
 let unsubConfig: (() => void) | null = null;
+let unsubOpenPlayer: (() => void) | null = null;
 /** 切歌竞态令牌 */
 let token = 0;
 
@@ -77,12 +79,16 @@ export const startVoiceHubController = (): void => {
       if (cfg?.mode !== "audio") useMediaStore().clear();
     })();
   });
+  // 主进程到点弹窗指令：展开软件全屏歌词播放页
+  unsubOpenPlayer = window.api.voicehub.onOpenPlayer(() => setPlayerExpanded(true));
 };
 
 /** 停止控制器 */
 export const stopVoiceHubController = (): void => {
   unsubNowPlaying?.();
   unsubConfig?.();
+  unsubOpenPlayer?.();
   unsubNowPlaying = null;
   unsubConfig = null;
+  unsubOpenPlayer = null;
 };

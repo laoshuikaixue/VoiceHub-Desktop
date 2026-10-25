@@ -619,6 +619,8 @@ const api = {
       subscribe("voicehub:now-playing", callback),
     // 订阅配置变更广播
     onConfigChange: (callback: (data: unknown) => void) => subscribe("voicehub:configChange", callback),
+    // 订阅“展开软件播放页”指令
+    onOpenPlayer: (callback: () => void) => subscribe("voicehub:openPlayer", () => callback()),
   },
   theme: {
     // 弹出文件选择框

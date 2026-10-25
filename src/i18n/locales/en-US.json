@@ -1914,9 +1914,11 @@
     },
     "voicehubPopupView": {
       "label": "Popup view",
-      "description": "Window shown at start: desktop lyric (always-on-top) or main window",
-      "desktopLyric": "Desktop lyric",
-      "main": "Main window"
+      "description": "Window shown at start (taskbar lyric is Windows-only)",
+      "playerTaskbar": "Player + Taskbar lyric",
+      "taskbarLyric": "Taskbar lyric",
+      "player": "Player page",
+      "desktopLyric": "Desktop lyric"
     },
     "voicehubPollInterval": {
       "label": "Poll interval (s)",

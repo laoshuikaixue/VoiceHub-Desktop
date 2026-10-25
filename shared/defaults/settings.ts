@@ -136,7 +136,7 @@ export const defaultSystemConfig: SystemConfig = {
     mode: "display",
     pollIntervalSec: 60,
     autoPopup: true,
-    popupView: "desktopLyric",
+    popupView: "player+taskbar",
     playTimeId: "all",
     defaultStartTime: "",
     cookie: "",

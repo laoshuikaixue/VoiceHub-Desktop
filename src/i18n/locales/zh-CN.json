@@ -1914,9 +1914,11 @@
     },
     "voicehubPopupView": {
       "label": "弹窗视图",
-      "description": "到点弹出时使用的窗口：桌面歌词（置顶悬浮）或主窗口",
-      "desktopLyric": "桌面歌词",
-      "main": "主窗口"
+      "description": "到点自动弹出的窗口（任务栏歌词仅 Windows）",
+      "playerTaskbar": "播放页 + 任务栏歌词",
+      "taskbarLyric": "任务栏歌词",
+      "player": "软件播放页",
+      "desktopLyric": "桌面歌词"
     },
     "voicehubPollInterval": {
       "label": "轮询间隔（秒）",
