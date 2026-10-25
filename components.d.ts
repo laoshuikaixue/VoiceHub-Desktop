@@ -319,6 +319,7 @@ declare module 'vue' {
     TrackInfo: typeof import('./src/components/player/TrackInfo.vue')['default']
     UiZoomDialog: typeof import('./src/components/modals/UiZoomDialog.vue')['default']
     UpdateDialog: typeof import('./src/components/modals/UpdateDialog.vue')['default']
+    VoiceHubActions: typeof import('./src/components/settings/custom/VoiceHubActions.vue')['default']
     WindowControls: typeof import('./src/components/layout/WindowControls.vue')['default']
   }
 }

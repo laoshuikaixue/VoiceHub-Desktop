@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "VoiceHub 校园广播站桌面客户端：基于 SPlayer 播放内核，到点弹出全屏/桌面/任务栏歌词窗，支持歌词小窗与完整站点模式",
   "type": "module",
-  "packageManager": "pnpm@12.15.0",
+  "packageManager": "pnpm@10.29.3",
   "main": "./out/main/index.js",
   "author": {
     "name": "imsyy",
@@ -24,7 +24,7 @@
   "license-file": "LICENSE",
   "engines": {
     "node": ">=24.0.0",
-    "pnpm": ">=12"
+    "pnpm": ">=10"
   },
   "scripts": {
     "format": "prettier --write .",

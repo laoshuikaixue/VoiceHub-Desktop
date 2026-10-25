@@ -58,29 +58,32 @@ const toTrack = (item: VoiceHubScheduleItem): Track => {
   };
 };
 
-/** 拉取当日排期并构建时间轴 */
-const rebuild = async (): Promise<void> => {
-  const playTimeId = store.get("voicehub.playTimeId");
-  const date = getBeijingDate();
-  const schedules = await api.getSchedules(date);
+/** 由排期列表构建带绝对起止的时间轴条目 */
+const buildTimedEntries = (
+  schedules: VoiceHubScheduleItem[],
+  playTimeId: number | "all",
+): TimedEntry[] => {
+  // 每日固定开始播放时间（HH:mm），作为未配时段/时段无开始时间歌曲的默认锚点
+  const defaultStart = (store.get("voicehub.defaultStartTime") || "").trim();
   const next: TimedEntry[] = [];
-  // 按时段分组，累加时长得到每首歌曲的绝对时间点
-  const byPlayTime = new Map<string, VoiceHubScheduleItem[]>();
+  const byGroup = new Map<string, VoiceHubScheduleItem[]>();
   for (const item of schedules) {
     const pt = item.playTime;
-    if (!pt || pt.enabled === false) continue;
-    const startMs = beijingTimeToEpoch(item.playDate, pt.startTime);
-    if (startMs === null) continue;
+    // 明确停用的时段跳过；未配时段（pt 为空）保留
+    if (pt && pt.enabled === false) continue;
     if (playTimeId !== "all" && item.playTimeId !== playTimeId) continue;
-    const key = `${item.playDate}|${pt.id}`;
-    const group = byPlayTime.get(key) || [];
+    const key = pt ? `${item.playDate}|${pt.id}` : `fallback|${item.playDate}`;
+    const group = byGroup.get(key) || [];
     group.push(item);
-    byPlayTime.set(key, group);
+    byGroup.set(key, group);
   }
-  for (const group of byPlayTime.values()) {
+  for (const group of byGroup.values()) {
     group.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
     const first = group[0];
-    const blockStart = beijingTimeToEpoch(first.playDate, first.playTime!.startTime)!;
+    // 本组优先用自身时段开始时间；无则回退到配置的每日固定开始时间
+    const ownStart = beijingTimeToEpoch(first.playDate, first.playTime?.startTime ?? null);
+    const blockStart = ownStart ?? beijingTimeToEpoch(first.playDate, defaultStart || null);
+    if (blockStart === null) continue; // 既无时段开始时间也未配每日固定时间，无法定时
     let cursor = blockStart;
     for (const item of group) {
       const durMs = (item.song.durationSeconds || 0) * 1000;
@@ -90,8 +93,95 @@ const rebuild = async (): Promise<void> => {
     }
   }
   next.sort((a, b) => a.startMs - b.startMs);
-  entries = next;
+  return next;
+};
+
+/** 拉取当日排期并构建时间轴 */
+const rebuild = async (): Promise<void> => {
+  const playTimeId = store.get("voicehub.playTimeId");
+  const date = getBeijingDate();
+  const schedules = await api.getSchedules(date);
+  entries = buildTimedEntries(schedules, playTimeId);
   lastRebuildAt = Date.now();
+};
+
+/**
+ * 时间轴诊断：返回当前（模拟）日期的时段概览与模拟时刻是否命中，供控制页排错
+ */
+export const getTimelineDebug = async (): Promise<{
+  date: string;
+  nowMs: number;
+  simActive: boolean;
+  totalSongs: number;
+  timedSongs: number;
+  inWindow: boolean;
+  current: { title: string; artist: string; startMs: number; endMs: number } | null;
+  windows: {
+    name: string;
+    startTime: string | null;
+    endTime: string | null;
+    enabled: boolean;
+    songCount: number;
+    timedCount: number;
+    firstStartMs: number | null;
+    lastEndMs: number | null;
+  }[];
+}> => {
+  const date = getBeijingDate();
+  const now = getNowMs();
+  const playTimeId = store.get("voicehub.playTimeId");
+  const schedules = await api.getSchedules(date);
+  const timed = buildTimedEntries(schedules, playTimeId);
+  const current = timed.find((e) => now >= e.startMs && now < e.endMs) || null;
+  // 按时段聚合概览（含未定时项），便于定位“为何不弹”
+  const winMap = new Map<
+    string,
+    { name: string; startTime: string | null; endTime: string | null; enabled: boolean; songCount: number; timedCount: number; firstStartMs: number | null; lastEndMs: number | null }
+  >();
+  for (const item of schedules) {
+    const pt = item.playTime;
+    const key = pt ? String(pt.id) : "none";
+    let w = winMap.get(key);
+    if (!w) {
+      w = {
+        name: pt?.name || "未归属时段",
+        startTime: pt?.startTime ?? null,
+        endTime: pt?.endTime ?? null,
+        enabled: pt ? pt.enabled !== false : true,
+        songCount: 0,
+        timedCount: 0,
+        firstStartMs: null,
+        lastEndMs: null,
+      };
+      winMap.set(key, w);
+    }
+    w.songCount++;
+  }
+  for (const e of timed) {
+    const key = e.item.playTime ? String(e.item.playTime.id) : "none";
+    const w = winMap.get(key);
+    if (!w) continue;
+    w.timedCount++;
+    if (w.firstStartMs === null || e.startMs < w.firstStartMs) w.firstStartMs = e.startMs;
+    if (w.lastEndMs === null || e.endMs > w.lastEndMs) w.lastEndMs = e.endMs;
+  }
+  return {
+    date,
+    nowMs: now,
+    simActive: isSimActive(),
+    totalSongs: schedules.length,
+    timedSongs: timed.length,
+    inWindow: !!current,
+    current: current
+      ? {
+          title: current.item.song.title,
+          artist: current.item.song.artist,
+          startMs: current.startMs,
+          endMs: current.endMs,
+        }
+      : null,
+    windows: [...winMap.values()],
+  };
 };
 
 /** 当前时间命中的条目 */

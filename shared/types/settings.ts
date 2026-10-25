@@ -399,6 +399,8 @@ export interface VoiceHubSettings {
   popupView: VoiceHubPopupView;
   /** 关注的播放时段 ID；"all" 表示当日全部时段 */
   playTimeId: number | "all";
+  /** 每日固定开始播放时间（HH:mm）：未配置时段的歌曲以此为起点，到点默认开始播放 */
+  defaultStartTime: string;
   /** 管理员预览草稿排期时携带的站点 Cookie（含鉴权），空字符串表示匿名公开口径 */
   cookie: string;
 }

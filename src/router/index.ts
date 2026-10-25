@@ -93,11 +93,6 @@ const router = createRouter({
           component: () => import("@/pages/Search.vue"),
         },
         {
-          path: "voicehub",
-          name: "voicehub",
-          component: () => import("@/pages/VoiceHub.vue"),
-        },
-        {
           path: "streaming",
           component: () => import("@/pages/Streaming/Index.vue"),
           redirect: "/streaming/songs",

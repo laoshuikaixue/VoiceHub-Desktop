@@ -54,16 +54,13 @@ export const getBeijingMsOfDay = (nowMs = getNowMs()): number =>
   (nowMs + BJ_OFFSET_MS) % 86400000;
 
 /**
- * 把北京时间 (playDate, "HH:mm") 组合为绝对 Unix ms
+ * 把北京时间 (playDate, "HH:mm" 或 "HH:mm:ss") 组合为绝对 Unix ms
  * @returns 无法解析时返回 null
  */
 export const beijingTimeToEpoch = (playDate: string, hhmm: string | null): number | null => {
   if (!playDate || !hhmm) return null;
-  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm.trim());
-  if (!m) return null;
-  const hour = Number(m[1]);
-  const minute = Number(m[2]);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  const ms = Date.parse(`${playDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+08:00`);
+  const hms = normalizeHms(hhmm);
+  if (!hms) return null;
+  const ms = Date.parse(`${playDate}T${hms}+08:00`);
   return Number.isNaN(ms) ? null : ms;
 };

@@ -747,6 +747,7 @@
       "download": "下载配置",
       "localCache": "本地与缓存",
       "plugins": "插件管理",
+      "voicehub": "广播站集成",
       "other": "其他设置",
       "about": "关于软件"
     },
@@ -797,6 +798,8 @@
       "pluginsList": "插件管理",
       "streaming": "媒体源配置",
       "mediaServerManagement": "媒体源管理",
+      "voicehub": "排期与显示",
+      "voicehubTest": "连接与模拟测试",
       "songCache": "歌曲缓存",
       "cache": "缓存管理",
       "database": "数据库管理",
@@ -1888,6 +1891,54 @@
     "streamingEnabled": {
       "label": "启用流媒体",
       "description": "关闭后将隐藏侧边栏的媒体源入口"
+    },
+    "voicehubEnabled": {
+      "label": "启用广播站集成",
+      "description": "轮询排期，到点自动弹出歌词窗，补全广播站放歌时看不到歌曲的情况"
+    },
+    "voicehubBaseUrl": {
+      "label": "服务地址",
+      "description": "VoiceHub 站点根地址，例如 https://your-voicehub.example.com",
+      "placeholder": "https://…"
+    },
+    "voicehubMode": {
+      "label": "显示模式",
+      "description": "仅显示歌词（不发声）/ 桌面播放（解析直链出声）/ 完整站点（内嵌网页）",
+      "display": "仅显示歌词",
+      "audio": "桌面播放",
+      "site": "完整站点"
+    },
+    "voicehubAutoPopup": {
+      "label": "到点自动弹窗",
+      "description": "到达播放时段起点时自动弹出窗口"
+    },
+    "voicehubPopupView": {
+      "label": "弹窗视图",
+      "description": "到点弹出时使用的窗口：桌面歌词（置顶悬浮）或主窗口",
+      "desktopLyric": "桌面歌词",
+      "main": "主窗口"
+    },
+    "voicehubPollInterval": {
+      "label": "轮询间隔（秒）",
+      "description": "拉取排期的间隔，最小 15 秒"
+    },
+    "voicehubPlayTimeId": {
+      "label": "关注时段 ID",
+      "description": "仅跟踪指定播放时段；留空表示当日全部时段",
+      "placeholder": "留空 = 全部"
+    },
+    "voicehubDefaultStartTime": {
+      "label": "每日开始播放时间",
+      "description": "未配置播放时段的歌曲以此为固定起点，每天到达该时间默认开始播放（支持 HH:mm 或 HH:mm:ss，如 07:30:00）",
+      "placeholder": "07:30:00"
+    },
+    "voicehubCookie": {
+      "label": "管理员 Cookie（可选）",
+      "description": "需要预览草稿排期时填写站点登录 Cookie，留空为匿名公开口径",
+      "placeholder": "留空为公开排期"
+    },
+    "voicehubActions": {
+      "label": "连接与模拟测试"
     },
     "externalApiEnabled": {
       "label": "允许外部控制",

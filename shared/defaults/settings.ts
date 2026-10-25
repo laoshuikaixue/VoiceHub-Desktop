@@ -138,6 +138,7 @@ export const defaultSystemConfig: SystemConfig = {
     autoPopup: true,
     popupView: "desktopLyric",
     playTimeId: "all",
+    defaultStartTime: "",
     cookie: "",
   },
   lastfm: {

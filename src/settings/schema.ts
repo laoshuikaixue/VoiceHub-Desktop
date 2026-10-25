@@ -11,6 +11,7 @@ import mediaSourceCategory from "./categories/streaming";
 import downloadCategory from "./categories/download";
 import localCacheCategory from "./categories/localCache";
 import pluginsCategory from "./categories/plugins";
+import voicehubCategory from "./categories/voicehub";
 import otherCategory from "./categories/other";
 import { updateSection } from "./sections/update";
 import AboutSettings from "@/components/settings/custom/AboutSettings.vue";
@@ -29,6 +30,7 @@ export const settingsSchema: SettingCategory[] = [
   downloadCategory,
   localCacheCategory,
   pluginsCategory,
+  voicehubCategory,
   otherCategory,
   { id: "about", icon: IconLucideInfo, component: AboutSettings, sections: [updateSection] },
 ];

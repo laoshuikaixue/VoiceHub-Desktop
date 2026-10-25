@@ -613,6 +613,7 @@ const api = {
     clearSimulation: (): Promise<void> => ipcRenderer.invoke("voicehub:sim:clear"),
     simulationStatus: (): Promise<{ active: boolean; virtualDate: string }> =>
       ipcRenderer.invoke("voicehub:sim:status"),
+    timelineDebug: () => ipcRenderer.invoke("voicehub:sim:timeline"),
     // 订阅当前曲目事件（audio 模式据此播放）
     onNowPlaying: (callback: (data: VoiceHubNowPlayingEvent & { playUrl: string | null }) => void) =>
       subscribe("voicehub:now-playing", callback),

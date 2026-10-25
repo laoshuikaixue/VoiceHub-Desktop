@@ -39,4 +39,21 @@ export const virtualBindings: Record<string, VirtualBinding> = {
       window.api.window.toggleTaskbarLyric().catch(() => {});
     },
   },
+  /**
+   * VoiceHub 关注时段 ID：持久化为 number | "all"，UI 以文本编辑
+   */
+  voicehubPlayTimeId: {
+    get: () => {
+      const value = useSettingsStore().system.voicehub.playTimeId;
+      return value === "all" ? "" : String(value);
+    },
+    set: (v) => {
+      const raw = String(v ?? "").trim();
+      const parsed = raw === "" || raw.toLowerCase() === "all" ? "all" : Number(raw);
+      useSettingsStore().setSystem(
+        "voicehub.playTimeId",
+        Number.isNaN(parsed as number) ? "all" : parsed,
+      );
+    },
+  },
 };

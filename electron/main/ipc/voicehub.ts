@@ -1,6 +1,12 @@
 import { ipcMain } from "electron";
 import * as api from "@main/services/voicehub/api";
-import { startScheduler, setSimulation, clearSimulation, getSimulationStatus } from "@main/services/voicehub/scheduler";
+import {
+  startScheduler,
+  setSimulation,
+  clearSimulation,
+  getSimulationStatus,
+  getTimelineDebug,
+} from "@main/services/voicehub/scheduler";
 import { openSiteWindow, closeSiteWindow, toggleSiteWindow } from "@main/window";
 import type { VoiceHubSong } from "@shared/types/voicehub";
 
@@ -25,4 +31,5 @@ export const registerVoiceHubIpc = (): void => {
   );
   ipcMain.handle("voicehub:sim:clear", () => clearSimulation());
   ipcMain.handle("voicehub:sim:status", () => getSimulationStatus());
+  ipcMain.handle("voicehub:sim:timeline", () => getTimelineDebug());
 };

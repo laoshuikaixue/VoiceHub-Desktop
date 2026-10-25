@@ -65,6 +65,27 @@ export interface VoiceHubNowPlayingEvent {
 
 /** 音频直链解析结果（与 VoiceHubPlayUrlResult 同源）已定义于上 */
 
+/** 时间轴诊断结果 */
+export interface VoiceHubTimelineDebug {
+  date: string;
+  nowMs: number;
+  simActive: boolean;
+  totalSongs: number;
+  timedSongs: number;
+  inWindow: boolean;
+  current: { title: string; artist: string; startMs: number; endMs: number } | null;
+  windows: {
+    name: string;
+    startTime: string | null;
+    endTime: string | null;
+    enabled: boolean;
+    songCount: number;
+    timedCount: number;
+    firstStartMs: number | null;
+    lastEndMs: number | null;
+  }[];
+}
+
 /** VoiceHub preload API */
 export interface VoiceHubApi {
   getSchedules: (date?: string) => Promise<VoiceHubScheduleItem[]>;
@@ -77,6 +98,7 @@ export interface VoiceHubApi {
   setSimulation: (date: string, time: string | null) => Promise<boolean>;
   clearSimulation: () => Promise<void>;
   simulationStatus: () => Promise<{ active: boolean; virtualDate: string }>;
+  timelineDebug: () => Promise<VoiceHubTimelineDebug>;
   onNowPlaying: (
     callback: (data: VoiceHubNowPlayingEvent & { playUrl: string | null }) => void,
   ) => () => void;
@@ -92,5 +114,6 @@ export type VoiceHubSettingsLike = {
   autoPopup: boolean;
   popupView: "desktopLyric" | "main";
   playTimeId: number | "all";
+  defaultStartTime: string;
   cookie: string;
 };

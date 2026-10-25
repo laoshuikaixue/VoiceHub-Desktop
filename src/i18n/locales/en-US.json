@@ -747,6 +747,7 @@
       "download": "Downloads",
       "localCache": "Local & Cache",
       "plugins": "Plugin Manager",
+      "voicehub": "Broadcast",
       "other": "Other",
       "about": "About"
     },
@@ -797,6 +798,8 @@
       "pluginsList": "Plugin Management",
       "streaming": "Media Source Config",
       "mediaServerManagement": "Media Source Management",
+      "voicehub": "Schedule & Display",
+      "voicehubTest": "Connection & Simulation",
       "songCache": "Song Cache",
       "downloadLocation": "Download Settings",
       "downloadGeneral": "Download Options",
@@ -1888,6 +1891,54 @@
     "streamingEnabled": {
       "label": "Enable streaming",
       "description": "When disabled, the media sources entry is hidden from the sidebar"
+    },
+    "voicehubEnabled": {
+      "label": "Enable broadcast integration",
+      "description": "Poll the schedule and pop up a lyric window at play time, so songs are visible during broadcast"
+    },
+    "voicehubBaseUrl": {
+      "label": "Server URL",
+      "description": "VoiceHub site root URL, e.g. https://your-voicehub.example.com",
+      "placeholder": "https://…"
+    },
+    "voicehubMode": {
+      "label": "Display mode",
+      "description": "Lyrics only (silent) / Play audio (resolve stream and play) / Full site (embedded web page)",
+      "display": "Lyrics only",
+      "audio": "Play audio",
+      "site": "Full site"
+    },
+    "voicehubAutoPopup": {
+      "label": "Auto popup at start",
+      "description": "Show a window automatically when a play time slot begins"
+    },
+    "voicehubPopupView": {
+      "label": "Popup view",
+      "description": "Window shown at start: desktop lyric (always-on-top) or main window",
+      "desktopLyric": "Desktop lyric",
+      "main": "Main window"
+    },
+    "voicehubPollInterval": {
+      "label": "Poll interval (s)",
+      "description": "Interval to fetch the schedule, minimum 15 seconds"
+    },
+    "voicehubPlayTimeId": {
+      "label": "Play time ID",
+      "description": "Track only a specific slot; empty means all slots of the day",
+      "placeholder": "Empty = all"
+    },
+    "voicehubDefaultStartTime": {
+      "label": "Daily start time",
+      "description": "Fixed start for songs without a play time slot; they begin playing at this time every day (HH:mm or HH:mm:ss, e.g. 07:30:00)",
+      "placeholder": "07:30:00"
+    },
+    "voicehubCookie": {
+      "label": "Admin cookie (optional)",
+      "description": "Provide the site login cookie to preview draft schedules; empty uses the public schedule",
+      "placeholder": "Empty = public schedule"
+    },
+    "voicehubActions": {
+      "label": "Connection & Simulation"
     },
     "externalApiEnabled": {
       "label": "Allow external control",
