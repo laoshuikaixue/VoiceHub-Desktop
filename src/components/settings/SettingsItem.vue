@@ -1,0 +1,171 @@
+<script setup lang="ts">
+import type { SettingItem } from "@/types/settings-schema";
+import { useSettingModel } from "@/settings/useSettingModel";
+import { dialog } from "@/composables/useDialog";
+
+const props = defineProps<{
+  item: SettingItem;
+  highlightKey?: string;
+}>();
+
+const { t } = useI18n();
+
+const model = props.item.binding ? useSettingModel(props.item.binding) : ref<any>();
+
+/** 应用变更 */
+const applyChange = async (next: unknown): Promise<void> => {
+  const cfg = props.item.confirm;
+  if (cfg && (!cfg.when || cfg.when(next))) {
+    const confirmed = await dialog.confirm({
+      title: cfg.titleKey ? t(cfg.titleKey) : undefined,
+      content: t(cfg.contentKey),
+      type: cfg.type ?? "warning",
+      confirmText: cfg.confirmTextKey ? t(cfg.confirmTextKey) : undefined,
+      cancelText: cfg.cancelTextKey ? t(cfg.cancelTextKey) : undefined,
+    });
+    if (!confirmed) return;
+  }
+  model.value = next;
+  await props.item.action?.(next);
+};
+
+const selectOptions = computed(() =>
+  (props.item.options ?? []).map((o) => ({
+    value: o.value,
+    label: o.label ?? (o.labelKey ? t(o.labelKey) : String(o.value)),
+  })),
+);
+
+const isChildrenActive = computed(() => {
+  if (props.item.childrenCondition) return props.item.childrenCondition();
+  return model.value === true;
+});
+
+const isDisabled = computed(() => props.item.disabled?.() ?? false);
+const isVisible = computed(() => props.item.visible?.() ?? true);
+
+const descriptionText = computed(() =>
+  t(props.item.descriptionKey ?? `settings.${props.item.key}.description`),
+);
+</script>
+
+<template>
+  <div v-if="isVisible" :id="`setting-${item.key}`">
+    <component
+      :is="item.component"
+      v-if="item.type === 'custom' && item.fullWidth && item.component"
+      v-bind="item.componentProps"
+      class="transition-all duration-300"
+      :class="highlightKey === item.key ? 'animate-highlight-pulse' : ''"
+    />
+    <div
+      v-else
+      class="flex items-center justify-between gap-4 rounded-xl bg-surface-panel border border-solid border-outline-variant/15 px-4 py-3.5 transition-all duration-300"
+      :class="highlightKey === item.key ? 'animate-highlight-pulse' : ''"
+    >
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 text-base">
+          <span>{{ t(`settings.${item.key}.label`) }}</span>
+          <STag v-if="item.tag" :type="item.tag.type ?? 'primary'">
+            {{ item.tag.text }}
+          </STag>
+        </div>
+        <div v-if="!item.hideDescription" class="text-sm text-on-surface-variant/70 mt-0.5">
+          {{ descriptionText }}
+        </div>
+      </div>
+
+      <div class="shrink-0 w-50 flex justify-end">
+        <SSwitch
+          v-if="item.type === 'switch'"
+          :model-value="model"
+          :disabled="isDisabled"
+          @update:model-value="applyChange($event)"
+        />
+        <SSelect
+          v-else-if="item.type === 'select'"
+          :model-value="model"
+          :options="selectOptions"
+          :disabled="isDisabled"
+          @update:model-value="applyChange($event)"
+        />
+        <SSlider
+          v-else-if="item.type === 'slider'"
+          :model-value="model"
+          :min="item.min ?? 0"
+          :max="item.max ?? 100"
+          :step="item.step ?? 1"
+          :marks="item.marks"
+          :disabled="isDisabled"
+          class="w-full"
+          :thumb-size="14"
+          :track-height="4"
+          always-show-thumb
+          show-popover
+          @change="applyChange($event)"
+        >
+          <template #popover="{ value }">{{ value }}</template>
+        </SSlider>
+        <SColor
+          v-else-if="item.type === 'color'"
+          :model-value="model"
+          :disabled="isDisabled"
+          :show-alpha="item.showAlpha"
+          :format="item.colorFormat"
+          @update:model-value="applyChange($event)"
+        />
+        <SButton
+          v-else-if="item.type === 'button'"
+          type="primary"
+          variant="secondary"
+          size="small"
+          @click="item.action?.()"
+        >
+          {{ t(`settings.${item.key}.label`) }}
+        </SButton>
+        <SNumberInput
+          v-else-if="item.type === 'number'"
+          :model-value="model"
+          :min="item.min"
+          :max="item.max"
+          :step="item.step"
+          :unit="item.unit"
+          :placeholder="item.placeholderKey ? t(item.placeholderKey) : ''"
+          :disabled="isDisabled"
+          update-on="blur"
+          class="w-full"
+          @update:model-value="applyChange($event)"
+        />
+        <SInput
+          v-else-if="item.type === 'text'"
+          :model-value="model"
+          :placeholder="item.placeholderKey ? t(item.placeholderKey) : ''"
+          :disabled="isDisabled"
+          update-on="blur"
+          clearable
+          class="w-full"
+          @update:model-value="applyChange($event)"
+        />
+        <component
+          :is="item.component"
+          v-else-if="item.type === 'custom' && item.component"
+          v-bind="item.componentProps"
+          :model-value="model"
+          @update:model-value="model = $event"
+        />
+      </div>
+    </div>
+    <div
+      v-if="item.children?.length && (!item.hideChildren || isChildrenActive)"
+      class="mt-2.5 flex flex-col gap-2.5 transition-opacity duration-200"
+      :class="isChildrenActive ? '' : 'opacity-50 pointer-events-none'"
+    >
+      <SettingsItem
+        v-for="child in item.children"
+        :key="child.key"
+        :item="child"
+        :highlight-key="highlightKey"
+      />
+    </div>
+  </div>
+</template>

@@ -1,0 +1,519 @@
+import type { SettingCategory } from "@/types/settings-schema";
+import { ALL_PLATFORMS } from "@shared/types/platform";
+import { useSettingsStore } from "@/stores/settings";
+import AmllDbServerConfig from "@/components/settings/custom/AmllDbServerConfig.vue";
+import LocalLyricRepoConfig from "@/components/settings/custom/LocalLyricRepoConfig.vue";
+import LyricSourceOrderConfig from "@/components/settings/custom/LyricSourceOrderConfig.vue";
+import LyricFormatOrderConfig from "@/components/settings/custom/LyricFormatOrderConfig.vue";
+import ExcludeLyricsConfig from "@/components/settings/custom/ExcludeLyricsConfig.vue";
+import IconLucideMic2 from "~icons/lucide/mic-2";
+
+/** 来源偏好选项：auto + 全部平台（来自平台总表）+ self */
+const lyricSourcePreferenceOptions = [
+  { value: "auto", labelKey: "settings.lyricSourcePreference.auto" },
+  ...ALL_PLATFORMS.map((platform) => ({
+    value: platform,
+    labelKey: `settings.lyricSourcePreference.${platform}`,
+  })),
+  { value: "self", labelKey: "settings.lyricSourcePreference.self" },
+];
+
+/** 当前歌词引擎 */
+const lyricEngine = () => useSettingsStore().lyric.engine;
+
+const lyricCategory: SettingCategory = {
+  id: "lyric",
+  icon: IconLucideMic2,
+  sections: [
+    {
+      id: "lyricContent",
+      items: [
+        {
+          key: "lyricSourcePreference",
+          type: "select",
+          binding: { store: "settings", path: "lyric.lyricSourcePreference" },
+          options: lyricSourcePreferenceOptions,
+          defaultValue: "auto",
+          childrenCondition: () => useSettingsStore().lyric.lyricSourcePreference === "auto",
+          children: [
+            {
+              key: "smartPreferOnline",
+              type: "switch",
+              binding: { store: "settings", path: "lyric.smartPreferOnline" },
+              defaultValue: false,
+            },
+          ],
+        },
+        {
+          key: "preferPluginLyric",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.preferPluginLyric" },
+          defaultValue: false,
+        },
+        {
+          key: "lyricSourceOrder",
+          type: "custom",
+          component: LyricSourceOrderConfig,
+        },
+        {
+          key: "lyricFormatOrder",
+          type: "custom",
+          component: LyricFormatOrderConfig,
+        },
+        {
+          key: "detectBackgroundLyrics",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.detectBackgroundLyrics" },
+          defaultValue: true,
+        },
+        {
+          key: "cjkTransform",
+          type: "select",
+          binding: { store: "settings", path: "lyric.cjkTransform" },
+          options: [
+            { value: "none", labelKey: "settings.cjkTransform.none" },
+            { value: "s2t", labelKey: "settings.cjkTransform.s2t" },
+            { value: "t2s", labelKey: "settings.cjkTransform.t2s" },
+            { value: "s2twp", labelKey: "settings.cjkTransform.s2twp" },
+            { value: "tw2sp", labelKey: "settings.cjkTransform.tw2sp" },
+            { value: "s2hk", labelKey: "settings.cjkTransform.s2hk" },
+            { value: "hk2s", labelKey: "settings.cjkTransform.hk2s" },
+            { value: "t2tw", labelKey: "settings.cjkTransform.t2tw" },
+            { value: "tw2t", labelKey: "settings.cjkTransform.tw2t" },
+            { value: "t2hk", labelKey: "settings.cjkTransform.t2hk" },
+            { value: "hk2t", labelKey: "settings.cjkTransform.hk2t" },
+            { value: "jp2t", labelKey: "settings.cjkTransform.jp2t" },
+            { value: "t2jp", labelKey: "settings.cjkTransform.t2jp" },
+          ],
+          defaultValue: "none",
+        },
+      ],
+    },
+    {
+      id: "lyricTTML",
+      items: [
+        {
+          key: "enableOnlineTTMLLyric",
+          type: "switch",
+          binding: { store: "settings", path: "system.lyric.enableOnlineTTMLLyric" },
+          defaultValue: false,
+          tag: { text: "Beta" },
+          children: [
+            {
+              key: "amllDbServer",
+              type: "custom",
+              component: AmllDbServerConfig,
+              binding: { store: "settings", path: "system.lyric.amllDbServer" },
+            },
+          ],
+        },
+        {
+          key: "enableLocalTTMLOverride",
+          type: "switch",
+          binding: { store: "settings", path: "system.localLyric.enableLocalTTMLOverride" },
+          defaultValue: false,
+          tag: { text: "Beta" },
+          children: [
+            {
+              key: "localLyricRepoDir",
+              type: "custom",
+              component: LocalLyricRepoConfig,
+              binding: { store: "settings", path: "system.localLyric.repoDir" },
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "lyricExclude",
+      items: [
+        {
+          key: "enableExcludeLyrics",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.enableExcludeLyrics" },
+          defaultValue: true,
+          children: [
+            {
+              key: "excludeLyricsRules",
+              type: "custom",
+              component: ExcludeLyricsConfig,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "lyricGeneral",
+      items: [
+        {
+          key: "engine",
+          type: "select",
+          binding: { store: "settings", path: "lyric.engine" },
+          options: [
+            { value: "physics", labelKey: "settings.lyricEngine.physics" },
+            { value: "amll", labelKey: "settings.lyricEngine.amll" },
+          ],
+          defaultValue: "physics",
+          confirm: {
+            when: (next) => next === "amll",
+            titleKey: "settings.confirm.highResourceTitle",
+            contentKey: "settings.confirm.highResourceContent",
+            type: "warning",
+          },
+        },
+        {
+          key: "adaptiveFontSize",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.adaptiveFontSize" },
+          defaultValue: true,
+        },
+        {
+          key: "fontSize",
+          type: "slider",
+          binding: { store: "settings", path: "lyric.fontSize" },
+          min: 12,
+          max: 80,
+          step: 1,
+          defaultValue: 48,
+          marks: { 12: "12", 48: "48", 80: "80" },
+        },
+        {
+          key: "translationFontSizeFollowMain",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.translationFontSizeFollowMain" },
+          defaultValue: true,
+        },
+        {
+          key: "translationFontSize",
+          type: "slider",
+          binding: { store: "settings", path: "lyric.translationFontSize" },
+          min: 12,
+          max: 48,
+          step: 1,
+          defaultValue: 24,
+          marks: { 12: "12", 24: "24", 48: "48" },
+          disabled: () => useSettingsStore().lyric.translationFontSizeFollowMain,
+        },
+        {
+          key: "fontWeight",
+          type: "slider",
+          binding: { store: "settings", path: "lyric.fontWeight" },
+          min: 100,
+          max: 900,
+          step: 100,
+          defaultValue: 700,
+          marks: { 100: "100", 400: "400", 700: "700", 900: "900" },
+        },
+        {
+          key: "lyricBlendMode",
+          type: "select",
+          binding: { store: "settings", path: "lyric.lyricBlendMode" },
+          options: [
+            { value: "normal", labelKey: "settings.lyricBlendMode.normal" },
+            { value: "screen", labelKey: "settings.lyricBlendMode.screen" },
+            { value: "plus-lighter", labelKey: "settings.lyricBlendMode.plusLighter" },
+          ],
+          defaultValue: "normal",
+        },
+        {
+          key: "showTranslation",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.showTranslation" },
+          defaultValue: true,
+        },
+        {
+          key: "showRuby",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.showRuby" },
+          defaultValue: true,
+        },
+        {
+          key: "showRomanization",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.showRomanization" },
+          defaultValue: true,
+        },
+        {
+          key: "showWordRomanization",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.showWordRomanization" },
+          defaultValue: true,
+        },
+      ],
+    },
+    {
+      id: "lyricDisplay",
+      items: [
+        {
+          key: "lyricAlignment",
+          type: "select",
+          binding: { store: "settings", path: "lyric.alignment" },
+          options: [
+            { value: "auto", labelKey: "settings.lyricAlignment.auto" },
+            { value: "left", labelKey: "settings.lyricAlignment.left" },
+            { value: "center", labelKey: "settings.lyricAlignment.center" },
+            { value: "right", labelKey: "settings.lyricAlignment.right" },
+          ],
+          defaultValue: "auto",
+          visible: () => lyricEngine() === "physics",
+        },
+        {
+          key: "enableScale",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.enableScale" },
+          defaultValue: true,
+        },
+        {
+          key: "bgAlwaysBelow",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.bgAlwaysBelow" },
+          defaultValue: false,
+        },
+        {
+          key: "enableWordHighlight",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.enableWordHighlight" },
+          defaultValue: true,
+          visible: () => lyricEngine() === "physics",
+        },
+        {
+          key: "enableFloatAnimation",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.enableFloatAnimation" },
+          defaultValue: false,
+          visible: () => lyricEngine() === "physics",
+        },
+        {
+          key: "enableEmphasizeEffect",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.enableEmphasizeEffect" },
+          defaultValue: false,
+          visible: () => lyricEngine() === "physics",
+        },
+        {
+          key: "enableBlur",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.enableBlur" },
+          defaultValue: false,
+        },
+        {
+          key: "hidePassedLines",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.hidePassedLines" },
+          defaultValue: false,
+        },
+      ],
+    },
+    {
+      id: "lyricAMLLOptimize",
+      visible: () => lyricEngine() === "amll",
+      items: [
+        {
+          key: "amllCleanUnintentionalOverlaps",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.amllCleanUnintentionalOverlaps" },
+          defaultValue: true,
+        },
+        {
+          key: "amllTryAdvanceStartTime",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.amllTryAdvanceStartTime" },
+          defaultValue: true,
+        },
+        {
+          key: "amllSyncMainAndBackgroundLines",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.amllSyncMainAndBackgroundLines" },
+          defaultValue: true,
+        },
+        {
+          key: "amllNormalizeSpaces",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.amllNormalizeSpaces" },
+          defaultValue: true,
+        },
+        {
+          key: "amllResetLineTimestamps",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.amllResetLineTimestamps" },
+          defaultValue: true,
+        },
+      ],
+    },
+    {
+      id: "lyricSpring",
+      items: [
+        {
+          key: "springPreset",
+          type: "select",
+          binding: { store: "settings", path: "lyric.springPreset" },
+          options: [
+            { value: "default", labelKey: "settings.springPreset.default" },
+            { value: "smooth", labelKey: "settings.springPreset.smooth" },
+            { value: "responsive", labelKey: "settings.springPreset.responsive" },
+            { value: "jello", labelKey: "settings.springPreset.jello" },
+            { value: "heavy", labelKey: "settings.springPreset.heavy" },
+            { value: "noBounce", labelKey: "settings.springPreset.noBounce" },
+            { value: "custom", labelKey: "settings.springPreset.custom" },
+          ],
+          defaultValue: "default",
+          visible: () => lyricEngine() === "physics",
+          childrenCondition: () => useSettingsStore().lyric.springPreset === "custom",
+          children: [
+            {
+              key: "springMass",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.springMass" },
+              min: 0.1,
+              max: 5,
+              step: 0.1,
+              defaultValue: 0.9,
+              marks: { 0.1: "0.1", 0.9: "0.9", 5: "5" },
+            },
+            {
+              key: "springDamping",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.springDamping" },
+              min: 1,
+              max: 50,
+              step: 0.5,
+              defaultValue: 15,
+              marks: { 1: "1", 15: "15", 50: "50" },
+            },
+            {
+              key: "springStiffness",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.springStiffness" },
+              min: 10,
+              max: 300,
+              step: 5,
+              defaultValue: 90,
+              marks: { 10: "10", 90: "90", 300: "300" },
+            },
+          ],
+        },
+        {
+          key: "useAMSpring",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.useAMSpring" },
+          defaultValue: true,
+          visible: () => lyricEngine() === "amll",
+          hideChildren: true,
+          childrenCondition: () => useSettingsStore().lyric.useAMSpring,
+          children: [
+            {
+              key: "amllVerticalSpringMass",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.amllVerticalSpringMass" },
+              min: 0.1,
+              max: 5,
+              step: 0.1,
+              defaultValue: 1,
+              marks: { 0.1: "0.1", 1: "1", 5: "5" },
+            },
+            {
+              key: "amllVerticalSpringDamping",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.amllVerticalSpringDamping" },
+              min: 0,
+              max: 40,
+              step: 0.5,
+              defaultValue: 15,
+              marks: { 0: "0", 15: "15", 40: "40" },
+            },
+            {
+              key: "amllVerticalSpringStiffness",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.amllVerticalSpringStiffness" },
+              min: 1,
+              max: 300,
+              step: 1,
+              defaultValue: 100,
+              marks: { 1: "1", 100: "100", 300: "300" },
+            },
+            {
+              key: "amllVerticalSpringSoft",
+              type: "switch",
+              binding: { store: "settings", path: "lyric.amllVerticalSpringSoft" },
+              defaultValue: false,
+            },
+            {
+              key: "amllScaleSpringMass",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.amllScaleSpringMass" },
+              min: 0.1,
+              max: 5,
+              step: 0.1,
+              defaultValue: 1,
+              marks: { 0.1: "0.1", 1: "1", 5: "5" },
+            },
+            {
+              key: "amllScaleSpringDamping",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.amllScaleSpringDamping" },
+              min: 0,
+              max: 40,
+              step: 0.5,
+              defaultValue: 20,
+              marks: { 0: "0", 20: "20", 40: "40" },
+            },
+            {
+              key: "amllScaleSpringStiffness",
+              type: "slider",
+              binding: { store: "settings", path: "lyric.amllScaleSpringStiffness" },
+              min: 1,
+              max: 300,
+              step: 1,
+              defaultValue: 100,
+              marks: { 1: "1", 100: "100", 300: "300" },
+            },
+            {
+              key: "amllScaleSpringSoft",
+              type: "switch",
+              binding: { store: "settings", path: "lyric.amllScaleSpringSoft" },
+              defaultValue: false,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "lyricLayout",
+      items: [
+        {
+          key: "alignPosition",
+          type: "slider",
+          binding: { store: "settings", path: "lyric.alignPosition" },
+          min: 0.1,
+          max: 0.9,
+          step: 0.05,
+          defaultValue: 0.35,
+          marks: { 0.1: "0.1", 0.35: "0.35", 0.9: "0.9" },
+        },
+        {
+          key: "wordFadeWidth",
+          type: "slider",
+          binding: { store: "settings", path: "lyric.wordFadeWidth" },
+          min: 0.1,
+          max: 1,
+          step: 0.1,
+          defaultValue: 0.5,
+          marks: { 0.1: "0.1", 0.5: "0.5", 1: "1" },
+        },
+        {
+          key: "inactiveAlpha",
+          type: "slider",
+          binding: { store: "settings", path: "lyric.inactiveAlpha" },
+          min: 0,
+          max: 1,
+          step: 0.05,
+          defaultValue: 0.2,
+          marks: { 0: "0", 0.2: "0.2", 1: "1" },
+          visible: () => lyricEngine() === "physics",
+        },
+      ],
+    },
+  ],
+};
+
+export default lyricCategory;

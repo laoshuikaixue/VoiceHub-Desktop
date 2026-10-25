@@ -1,0 +1,36 @@
+node_modules
+dist
+out
+build
+!/build/
+/build/*
+!/build/installer/
+.DS_Store
+.eslintcache
+.claude
+.agents
+docs/superpowers
+docs/.vitepress/cache
+docs/.vitepress/dist
+skills-lock.json
+*.log*
+.vscode/settings.json
+.idea
+
+# Rust build artifacts
+**/target
+native/*/*.node
+native/*/*.tmp
+native/*/*.swp
+# native/*/index.d.ts
+package-lock.json
+
+# 本地参考项目
+CI Lyrics
+SPlayer-ClassLink
+SPlayer-Dot-Lyrics
+demo
+
+# Code signing certificates
+*.pfx
+*.p12

@@ -1,0 +1,169 @@
+import { app, BrowserWindow } from "electron";
+import { electronApp, optimizer } from "@electron-toolkit/utils";
+import {
+  createMainWindow,
+  restoreLyricWindows,
+  getMainWindow,
+  focusMainWindow,
+  getDesktopLyricWindow,
+  getDynamicIslandWindow,
+  getTaskbarLyricWindow,
+} from "@main/window";
+import { isMac } from "@main/utils/config";
+import { registerIpcHandlers } from "@main/ipc";
+import { init as initMedia } from "@main/services/media";
+import { init as initLastfm } from "@main/services/lastfm";
+import { initGlobalHotkey } from "@main/services/globalHotkey";
+import { initDatabase } from "@main/database";
+import { init as initSongCache } from "@main/services/songCache";
+import { init as initDownload } from "@main/services/downloadManager";
+import { pluginRegistry } from "@main/plugins/registry";
+import { init as initPlaybackBridge } from "@main/plugins/playbackBridge";
+import { registerCacheScheme, handleCacheProtocol } from "@main/utils/protocol";
+import { startServer } from "@main/server";
+import { startMcpServer } from "@main/services/mcp/http";
+import { initUpdater } from "@main/services/updater";
+import { startScheduler } from "@main/services/voicehub/scheduler";
+import { coreLog, initLogger } from "@main/utils/logger";
+import { isAppQuitting } from "@main/utils/lifecycle";
+import { initAppLifecycle } from "./lifecycle";
+import {
+  initOrpheusRegistration,
+  extractOrpheusUrl,
+  captureOrpheusUrl,
+} from "@main/services/orpheus";
+import { extractAudioFiles, captureAudioFiles } from "@main/services/externalFile";
+
+/**
+ * 配置 Chromium 启动参数以优化内存占用
+ */
+const configureMemoryOptimizations = (): void => {
+  // 禁止预热备用渲染进程
+  app.commandLine.appendSwitch("disable-features", "SpareRendererForSitePerProcess");
+};
+
+/** 内存指标采样间隔 */
+const MEMORY_LOG_INTERVAL_MS = 10 * 60 * 1000;
+/** 启动后首次采样延迟，避开启动期波动 */
+const MEMORY_LOG_FIRST_DELAY_MS = 60 * 1000;
+
+/** 记录各进程内存工作集，用于量化内存表现与防劣化对比 */
+const logProcessMemory = (): void => {
+  // pid → 窗口名，让 Tab 进程能区分主窗口与各歌词窗口
+  const windowPids = new Map<number, string>();
+  const namedWindows: Array<[string, Electron.BrowserWindow | null]> = [
+    ["main", getMainWindow()],
+    ["desktop-lyric", getDesktopLyricWindow()],
+    ["dynamic-island", getDynamicIslandWindow()],
+    ["taskbar-lyric", getTaskbarLyricWindow()],
+  ];
+  for (const [name, win] of namedWindows) {
+    if (win && !win.isDestroyed()) windowPids.set(win.webContents.getOSProcessId(), name);
+  }
+  const parts = app.getAppMetrics().map((metric) => {
+    const mb = Math.round(metric.memory.workingSetSize / 1024);
+    const detail = windowPids.get(metric.pid) ?? metric.name ?? metric.serviceName;
+    const label = detail ? `${metric.type}(${detail})` : metric.type;
+    return `${label} ${mb}MB`;
+  });
+  coreLog.info(`内存占用: ${parts.join(" | ")}`);
+};
+
+/**
+ * 初始化应用
+ */
+export const initApp = (): void => {
+  configureMemoryOptimizations();
+  // 初始化日志
+  initLogger();
+  // 单例锁
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+    return;
+  }
+  app.on("second-instance", (_event, commandLine) => {
+    focusMainWindow();
+    const url = extractOrpheusUrl(commandLine);
+    if (url) captureOrpheusUrl(url);
+    const files = extractAudioFiles(commandLine);
+    if (files.length > 0) captureAudioFiles(files);
+  });
+  // macOS 通过 open-url 接收协议唤起
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    captureOrpheusUrl(url);
+  });
+  // macOS 通过 open-file 接收外部文件打开
+  app.on("open-file", (event, path) => {
+    event.preventDefault();
+    captureAudioFiles([path]);
+  });
+  // 注册缓存协议方案
+  registerCacheScheme();
+  // 其他初始化
+  app.whenReady().then(() => {
+    electronApp.setAppUserModelId("top.voicehub.desktop");
+    // 注册 cache:// 协议处理
+    handleCacheProtocol();
+    app.on("browser-window-created", (_, window) => {
+      optimizer.watchWindowShortcuts(window);
+    });
+    // 注册 IPC
+    let startupComplete = false;
+    registerIpcHandlers(() => {
+      if (startupComplete) return;
+      startupComplete = true;
+      setImmediate(() => {
+        if (isAppQuitting()) return;
+        void startServer();
+        void startMcpServer();
+        void pluginRegistry.checkAllUpdates();
+      });
+    });
+    // 初始化数据库
+    initDatabase();
+    // 创建主窗口
+    const mainWindow = createMainWindow();
+    // 播放配置同步前准备系统媒体控件，对外服务等待启动层退出。
+    mainWindow.once("show", () => {
+      initMedia();
+    });
+    // 注册 orpheus 协议并处理冷启动唤起
+    initOrpheusRegistration();
+    const coldOrpheusUrl = extractOrpheusUrl(process.argv);
+    if (coldOrpheusUrl) captureOrpheusUrl(coldOrpheusUrl);
+    const coldAudioFiles = extractAudioFiles(process.argv);
+    if (coldAudioFiles.length > 0) captureAudioFiles(coldAudioFiles);
+    // 启动歌曲缓存
+    void initSongCache();
+    // 启动下载服务
+    void initDownload();
+    // 初始化 Last.fm 集成
+    void initLastfm();
+    // 初始化插件系统
+    pluginRegistry.init();
+    // 初始化播放事件桥
+    initPlaybackBridge();
+    // 恢复歌词相关窗口
+    restoreLyricWindows();
+    // 启动 VoiceHub 排期调度（未启用时为空转，配置变更由 config:set 触发重启）
+    startScheduler();
+    // 注册全局快捷键
+    initGlobalHotkey();
+    initUpdater();
+    // 周期记录各进程内存
+    setTimeout(logProcessMemory, MEMORY_LOG_FIRST_DELAY_MS);
+    setInterval(logProcessMemory, MEMORY_LOG_INTERVAL_MS);
+    app.on("activate", () => {
+      if (isMac) {
+        if (getMainWindow()) focusMainWindow();
+        else createMainWindow();
+        return;
+      }
+      if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    });
+    coreLog.info("应用初始化完成");
+  });
+  initAppLifecycle();
+};

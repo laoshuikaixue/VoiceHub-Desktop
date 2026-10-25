@@ -1,0 +1,397 @@
+import type { Track, TrackSource } from "@shared/types/player";
+import type { Platform } from "@shared/types/platform";
+import type { QualityLevel } from "@/utils/quality";
+import { streamingSourceForTrack } from "@shared/utils/streamingSource";
+import { useSettingsStore } from "@/stores/settings";
+import { usePluginsStore } from "@/stores/plugins";
+import { useUserStore } from "@/stores/user";
+import { resolveNeteaseUrl } from "@/apis/song/netease";
+import { resolveQQMusicUrl } from "@/apis/song/qqmusic";
+import { resolveKugouUrl } from "@/apis/song/kugou";
+import { ErrorCode } from "@shared/types/errors";
+import { handleError } from "@/utils/errors";
+
+/** 在线平台 source → 插件 source key */
+const PLATFORM_TO_PLUGIN_SOURCE: Record<Platform, string> = {
+  netease: "wy",
+  qqmusic: "tx",
+  kugou: "kg",
+};
+
+/** 解析选项 */
+export interface ResolveTrackSourceOptions {
+  /** 已下载文件加载失败时跳过，继续解析缓存或在线音源 */
+  skipDownloaded?: boolean;
+  /** 将解析失败原因交给播放流程，供提示和跳曲决策使用 */
+  onError?: (error: string) => void;
+  /** 要跳过的插件 ID 列表 */
+  skipPluginIds?: readonly string[];
+  /** 是否跳过官方在线接口，直接进入插件兜底 */
+  skipOfficialOnline?: boolean;
+  /** 是否静默解析 */
+  silent?: boolean;
+}
+
+/**
+ * 检查给定 source 是否为在线平台
+ * @param source - 要检查的 source
+ */
+const isOnlinePlatform = (source: TrackSource): source is Platform =>
+  source === "netease" || source === "qqmusic" || source === "kugou";
+
+/**
+ * 派生缓存键
+ * netease / qqmusic 把音质档位并入键，使不同音质的同一首歌互不覆盖
+ * @param track - 要解析的 track
+ * @param songLevel - 在线歌曲音质档位
+ * @returns 派生缓存键，如果该 track 不参与歌曲缓存则返回 null
+ */
+const cacheKeyForTrack = (track: Track, songLevel: QualityLevel): string | null => {
+  if (track.source === "streaming" && track.serverId && track.originalId) {
+    return `s:${track.serverId}:${track.originalId}:${track.serverRevision ? `r${track.serverRevision}` : ""}`;
+  }
+  if (track.source === "kugou" && track.id) {
+    return `o:kugou:${track.id}:${track.extId ?? ""}:${songLevel}`;
+  }
+  if (isOnlinePlatform(track.source) && track.id) {
+    return `o:${track.source}:${track.id}:${songLevel}`;
+  }
+  return null;
+};
+
+/** 在线 URL 解析结果 */
+export type OnlineResolveResult =
+  | {
+      ok: true;
+      url: string;
+      isTrial: boolean;
+      provider: "official" | "plugin" | "trial";
+      pluginId?: string;
+    }
+  | { ok: false; errorCode: ErrorCode };
+
+/**
+ * 通过插件解析曲目音频地址，独立来源直接调用所属插件
+ * @param track - 待播放曲目
+ * @param quality - 请求的音质档位，默认 hq
+ * @param skipPluginIds - 本轮音源恢复中已失败的插件标识
+ * @returns 音频地址或解析失败原因
+ */
+export const resolveByPlugin = async (
+  track: Track,
+  quality: QualityLevel = "hq",
+  skipPluginIds: readonly string[] = [],
+): Promise<OnlineResolveResult> => {
+  const fail = (errorCode: ErrorCode): OnlineResolveResult => ({ ok: false, errorCode });
+  const plugins = usePluginsStore();
+  if (track.source === "plugin") {
+    const origin = track.plugin;
+    if (!origin || skipPluginIds.includes(origin.pluginId)) {
+      return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+    }
+    const plugin = plugins.list.find((info) => info.manifest.id === origin.pluginId);
+    if (
+      !plugin?.enabled ||
+      plugin.status.state !== "ready" ||
+      !plugin.status.sources[origin.source]?.actions.includes("musicUrl")
+    ) {
+      return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+    }
+    try {
+      const res = await window.api.plugins.resolveUrl({
+        pluginId: origin.pluginId,
+        source: origin.source,
+        quality,
+        musicInfo: { ...origin.musicInfo, songmid: origin.musicInfo.id },
+      });
+      const current = plugins.list.find((info) => info.manifest.id === origin.pluginId);
+      if (
+        !current?.enabled ||
+        current.status.state !== "ready" ||
+        !current.status.sources[origin.source]?.actions.includes("musicUrl")
+      ) {
+        return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+      }
+      return res?.url
+        ? { ok: true, url: res.url, isTrial: false, provider: "plugin", pluginId: origin.pluginId }
+        : fail(ErrorCode.URL_RESOLVE_FAILED);
+    } catch (err) {
+      console.warn("[plugin] resolveUrl failed", origin.pluginId, err);
+      return fail(ErrorCode.URL_RESOLVE_FAILED);
+    }
+  }
+  if (!isOnlinePlatform(track.source)) return fail(ErrorCode.URL_RESOLVE_FAILED);
+  const pluginSource = PLATFORM_TO_PLUGIN_SOURCE[track.source];
+  if (!pluginSource) return fail(ErrorCode.URL_RESOLVE_FAILED);
+  const skip = new Set(skipPluginIds);
+  const candidates = plugins.list.filter(
+    (info) =>
+      !skip.has(info.manifest.id) &&
+      info.enabled &&
+      info.status.state === "ready" &&
+      info.status.sources[pluginSource]?.actions.includes("musicUrl"),
+  );
+  if (candidates.length === 0) return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+  // 补齐 id / songmid / songId / hash / albumId 等字段
+  const totalSec = track.duration > 0 ? Math.round(track.duration / 1000) : 0;
+  const interval =
+    totalSec > 0
+      ? `${Math.floor(totalSec / 60)
+          .toString()
+          .padStart(2, "0")}:${(totalSec % 60).toString().padStart(2, "0")}`
+      : null;
+  const singer = track.artists.map((artist) => artist.name).join("/");
+  const songId = track.id;
+  const isHash =
+    typeof songId === "string" && songId.length === 32 && /^[0-9a-fA-F]{32}$/.test(songId);
+  const hash = isHash || track.source === "kugou" ? songId : undefined;
+  const musicInfo = {
+    id: songId,
+    songmid: songId,
+    songId,
+    name: track.title,
+    singer,
+    source: pluginSource,
+    interval,
+    img: track.cover ?? null,
+    ...(hash ? { hash } : {}),
+    albumId: track.album?.id ?? "",
+    albumName: track.album?.name ?? "",
+    meta: {
+      songId,
+      albumName: track.album?.name ?? "",
+      albumId: track.album?.id ?? "",
+      picUrl: track.cover ?? null,
+      ...(hash ? { hash } : {}),
+    },
+  };
+  for (const plugin of candidates) {
+    try {
+      const res = await window.api.plugins.resolveUrl({
+        pluginId: plugin.manifest.id,
+        source: pluginSource,
+        quality,
+        musicInfo,
+      });
+      if (res?.url) {
+        return {
+          ok: true,
+          url: res.url,
+          isTrial: false,
+          provider: "plugin",
+          pluginId: plugin.manifest.id,
+        };
+      }
+    } catch (err) {
+      console.warn("[plugin] resolveUrl failed", plugin.manifest.id, err);
+    }
+  }
+  return fail(ErrorCode.URL_RESOLVE_FAILED);
+};
+
+/**
+ * 解析在线音频源 URL
+ * @param track - 要解析的 track
+ * @param songLevel - 在线歌曲音质档位（仅内置官方接口生效）
+ */
+const resolveOnlineUrl = async (
+  track: Track,
+  songLevel: QualityLevel,
+  options: ResolveTrackSourceOptions = {},
+): Promise<OnlineResolveResult> => {
+  const settings = useSettingsStore();
+  let trialUrl: string | null = null;
+  let officialErrorCode: ErrorCode | null = null;
+  if (track.source === "netease" && !options.skipOfficialOnline) {
+    const user = useUserStore();
+    try {
+      const resolved = await resolveNeteaseUrl(track, songLevel, {
+        authenticated: user.isLoggedIn,
+        validate: () => user.fetchStatus(),
+      });
+      if (!resolved.available) {
+        officialErrorCode = resolved.errorCode;
+      } else if (!resolved.isTrial) {
+        return { ok: true, url: resolved.url, isTrial: false, provider: "official" };
+      } else {
+        trialUrl = resolved.url;
+      }
+    } catch (err) {
+      console.warn("[audio-source] official URL resolve failed:", err);
+      officialErrorCode = ErrorCode.NETWORK_ERROR;
+    }
+  }
+  if (track.source === "qqmusic" && !options.skipOfficialOnline) {
+    try {
+      const resolved = await resolveQQMusicUrl(track, songLevel);
+      if (resolved.available) {
+        return { ok: true, url: resolved.url, isTrial: false, provider: "official" };
+      }
+      officialErrorCode = resolved.errorCode;
+    } catch (err) {
+      console.warn("[audio-source] official QQMusic URL resolve failed:", err);
+      officialErrorCode = ErrorCode.NETWORK_ERROR;
+    }
+  }
+  if (track.source === "kugou" && !options.skipOfficialOnline) {
+    try {
+      const resolved = await resolveKugouUrl(track, songLevel);
+      if (resolved.available) {
+        return { ok: true, url: resolved.url, isTrial: false, provider: "official" };
+      }
+      officialErrorCode = resolved.errorCode;
+    } catch (err) {
+      console.warn("[audio-source] official Kugou URL resolve failed:", err);
+      officialErrorCode = ErrorCode.NETWORK_ERROR;
+    }
+  }
+  const pluginResolved = await resolveByPlugin(track, songLevel, options.skipPluginIds ?? []);
+  if (pluginResolved.ok) return pluginResolved;
+  if (trialUrl && settings.player.allowTrialPlay) {
+    return { ok: true, url: trialUrl, isTrial: true, provider: "trial" };
+  }
+  if (trialUrl) return { ok: false, errorCode: ErrorCode.NETEASE_TRIAL_DISABLED };
+  if (officialErrorCode) return { ok: false, errorCode: officialErrorCode };
+  return pluginResolved;
+};
+
+/**
+ * 解析结果
+ * - fromCache 为 true 时表示音源直接命中本地缓存
+ * - cacheRequest 存在时表示尚未缓存，调用方应在合适时机（如播放达到阈值后）触发它
+ */
+export interface ResolvedTrackSource {
+  source: string;
+  fromCache: boolean;
+  provider: "local" | "download" | "cache" | "streaming" | "official" | "plugin" | "trial";
+  pluginId?: string;
+  /**
+   * 下载音源并返回可供原生预载使用的缓存路径
+   * @param preloadId - 可选的预载消费者标识，用于缓存租约和独立取消
+   * @param signal - 在解析下载地址期间取消任务的信号
+   * @returns 缓存路径，未完成下载或已取消时返回 null
+   */
+  cacheRequest?: (preloadId?: string, signal?: AbortSignal) => Promise<string | null>;
+}
+
+/**
+ * 记录解析错误，支持静默模式抑制
+ * @param err - 错误信息或错误码
+ * @param options - 提示方式和错误接收回调
+ */
+const reportLoadError = (err: ErrorCode | string, options: ResolveTrackSourceOptions): void => {
+  options.onError?.(err);
+  if (!options.silent) handleError(err);
+};
+
+/**
+ * 解析歌曲的可播放音源及缓存下载入口
+ * @param track - 要解析的歌曲
+ * @param options - 错误提示、流媒体会话及在线来源重试选项
+ * @returns 本地路径或远端地址及缓存入口，无法解析时返回 null
+ */
+export const resolveTrackSource = async (
+  track: Track,
+  options: ResolveTrackSourceOptions = {},
+): Promise<ResolvedTrackSource | null> => {
+  // 本地文件
+  if (track.source === "local") {
+    const localPath = track.cueAudioPath ?? track.path;
+    if (!localPath) reportLoadError(ErrorCode.FILE_NOT_FOUND, options);
+    return localPath ? { source: localPath, fromCache: false, provider: "local" } : null;
+  }
+  const settings = useSettingsStore();
+  const songLevel = settings.player.songLevel;
+  if (track.source === "plugin") {
+    const resolved = await resolveByPlugin(track, songLevel, options.skipPluginIds);
+    if (!resolved.ok) {
+      reportLoadError(resolved.errorCode, options);
+      return null;
+    }
+    return {
+      source: resolved.url,
+      fromCache: false,
+      provider: "plugin",
+      pluginId: resolved.pluginId,
+    };
+  }
+  if (!options.skipDownloaded) {
+    try {
+      const downloaded = await window.api.download.lookup({
+        source: track.source,
+        id: track.id,
+        ...(track.source === "streaming"
+          ? {
+              serverId: track.serverId,
+              originalId: track.originalId,
+              serverRevision: track.serverRevision,
+            }
+          : {}),
+      });
+      if (downloaded) return { source: downloaded, fromCache: false, provider: "download" };
+    } catch (err) {
+      console.warn("[audio-source] download lookup failed:", err);
+    }
+  }
+  const cacheKey = cacheKeyForTrack(track, songLevel);
+  const cacheEnabled = settings.system.cache?.songCache?.enabled === true && cacheKey !== null;
+  if (cacheEnabled) {
+    const cached = await window.api.cache.song.lookup(cacheKey!);
+    if (cached) return { source: cached, fromCache: true, provider: "cache" };
+  }
+  // 流媒体
+  if (track.source === "streaming") {
+    try {
+      const source = streamingSourceForTrack(track);
+      const result: ResolvedTrackSource = {
+        source,
+        fromCache: false,
+        provider: "streaming",
+      };
+      if (cacheEnabled && settings.system.cache.songCache.cacheStreaming) {
+        // 缓存下载用独立 PlaySessionId
+        result.cacheRequest = async (preloadId, signal) => {
+          try {
+            if (signal?.aborted) return null;
+            return await window.api.cache.song.fetch(cacheKey, "streaming", source, preloadId);
+          } catch (err) {
+            console.warn("[cache] 流媒体缓存失败", err);
+            return null;
+          }
+        };
+      }
+      return result;
+    } catch (err) {
+      reportLoadError(err instanceof Error ? err.message : String(err), options);
+      return null;
+    }
+  }
+  // 在线源（netease / qqmusic / kugou）
+  if (isOnlinePlatform(track.source)) {
+    try {
+      const resolved = await resolveOnlineUrl(track, songLevel, options);
+      if (!resolved.ok) {
+        reportLoadError(resolved.errorCode, options);
+        return null;
+      }
+      const url = resolved.url;
+      const result: ResolvedTrackSource = {
+        source: url,
+        fromCache: false,
+        provider: resolved.provider,
+        pluginId: resolved.pluginId,
+      };
+      if (cacheEnabled && !resolved.isTrial) {
+        result.cacheRequest = async (preloadId, signal) => {
+          if (signal?.aborted) return null;
+          return window.api.cache.song.fetch(cacheKey, track.source, url, preloadId);
+        };
+      }
+      return result;
+    } catch (err) {
+      reportLoadError(err instanceof Error ? err.message : String(err), options);
+      return null;
+    }
+  }
+  return null;
+};

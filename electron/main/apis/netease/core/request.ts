@@ -1,0 +1,380 @@
+/** 按客户端协议装配请求并统一处理响应 */
+
+import { randomBytes } from "node:crypto";
+import {
+  API_DOMAIN,
+  DOMAIN,
+  EAPI_DOMAIN,
+  ENCRYPT_RESPONSE,
+  HOST_OS_KEY,
+  HOST_OS_VERSION,
+  OS_MAP,
+  SPECIAL_STATUS_CODES,
+  UA_MAP,
+  XEAPI_DOMAIN,
+  type CryptoMode,
+} from "./config";
+import { cookieObjToString, cookieToJson } from "./cookie";
+import * as encrypt from "./crypto";
+import { getAnonymousToken, getDeviceId } from "./device";
+import { ensureXeapiKey, getXeapiSession, updateXeapiSession } from "./xeapi";
+import { getAntiCheatTokenV3 } from "./checktoken";
+import { fetchWithProxy } from "@main/utils/proxy";
+import { NeteaseRequestError, type RequestResponse } from "./response";
+import { requestWithWebClient } from "./webClient";
+
+/** 调用方传入的可选参数 */
+export interface RequestOptions {
+  /** 网页请求由公共层匹配 SDK 规则并复用会话 */
+  client?: "web";
+  /** 加密方式；省略时依据路径默认规则，详见 createRequest */
+  crypto?: CryptoMode | "";
+  /** 预注入 cookie，可为字符串或对象 */
+  cookie?: string | Record<string, string>;
+  /** 自定义 User-Agent */
+  ua?: string;
+  /** 自定义 Referer/域名覆盖 */
+  domain?: string;
+  /** 真实 IP（X-Real-IP / X-Forwarded-For） */
+  realIP?: string;
+  ip?: string;
+  /** 是否让服务端加密响应体（仅 weapi/eapi 有效） */
+  e_r?: boolean;
+  /** 强制附加 anti-cheat token（如 "v3"） */
+  checkToken?: string | boolean;
+}
+
+interface NeteaseBody {
+  code?: number | string;
+  [key: string]: unknown;
+}
+
+/** weapi 专用 CSRF：从 cookie 中取 __csrf */
+const csrfFrom = (cookie: Record<string, string>): string => cookie["__csrf"] || "";
+
+/** macOS 客户端日志接口需要桌面浏览器 UA */
+const OSX_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/** 生成 WNMCID（进程级常量）：6 位小写字母.时间戳.01.0 */
+const WNMCID = (() => {
+  const chars = "abcdefghijklmnopqrstuvwxyz";
+  let s = "";
+  for (let i = 0; i < 6; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return `${s}.${Date.now()}.01.0`;
+})();
+
+/** 每次请求生成：timestamp_XXXX 的递增式 id */
+const generateRequestId = (): string => {
+  const rand = Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(4, "0");
+  return `${Date.now()}_${rand}`;
+};
+
+/** 缓存的服务端下发的合法 NMTID */
+let cachedNmtid = "";
+/** 未携带 NMTID 的探测重试次数（服务端仅在未携带 NMTID 的 eapi 请求下发 Set-Cookie: NMTID=...） */
+let nmtidRetriesLeft = 3;
+
+/** 补齐 cookie：注入 _ntes_nuid/_ntes_nnid/WNMCID/deviceId/appver 等客户端必备字段 */
+const processCookieObject = (
+  cookie: Record<string, string>,
+  crypto: CryptoMode | "",
+): Record<string, string> => {
+  const ntesNuid = cookie._ntes_nuid || randomBytes(16).toString("hex");
+  /** 未显式指定 os 时跟随宿主平台，系统版本取本机真实值 */
+  const osKey = (cookie.os as keyof typeof OS_MAP) || HOST_OS_KEY;
+  const os = OS_MAP[osKey] || OS_MAP[HOST_OS_KEY];
+  const osver = cookie.osver || (cookie.os ? os.osver : HOST_OS_VERSION);
+
+  const processed: Record<string, string> = {
+    ...cookie,
+    __remember_me: "true",
+    ntes_kaola_ad: "1",
+    _ntes_nuid: cookie._ntes_nuid || ntesNuid,
+    _ntes_nnid: cookie._ntes_nnid || `${ntesNuid},${Date.now()}`,
+    WNMCID: cookie.WNMCID || WNMCID,
+    WEVNSM: cookie.WEVNSM || "1.0.0",
+    osver,
+    deviceId: cookie.deviceId || getDeviceId(),
+    os: cookie.os || os.os,
+    channel: cookie.channel || os.channel,
+    appver: cookie.appver || os.appver,
+  };
+
+  /** 服务端下发条件为不带 NMTID 请求任意 eapi 接口 */
+  if (cookie.NMTID) {
+    processed.NMTID = cookie.NMTID;
+  } else if (cachedNmtid) {
+    processed.NMTID = cachedNmtid;
+  } else if (nmtidRetriesLeft <= 0 || crypto !== "eapi") {
+    processed.NMTID = "00O" + randomBytes(19).toString("hex").slice(0, 38);
+  }
+
+  if (!processed.MUSIC_U) {
+    processed.MUSIC_A = processed.MUSIC_A || getAnonymousToken();
+    if (!processed.MUSIC_A) delete processed.MUSIC_A;
+  }
+
+  return processed;
+};
+
+/** 根据加密方式 + 设备类型选择 User-Agent */
+const chooseUserAgent = (
+  crypto: keyof typeof UA_MAP,
+  uaType: "pc" | "android" | "iphone" | "linux" = "pc",
+): string => {
+  const map = UA_MAP[crypto] as Record<string, string> | undefined;
+  return (map && map[uaType]) || "";
+};
+
+/**
+ * 构造并发送请求
+ * @param uri - 接口路径，例如 `/api/w/login`；weapi 会自动替换前缀为 `/weapi/`
+ * @param data - 业务参数（不含 cookie/csrf，请求层会自动注入）
+ * @param options - 加密方式 / cookie / 代理等
+ * @returns 接口响应与会话 Cookie
+ */
+export const createRequest = async (
+  uri: string,
+  data: Record<string, unknown>,
+  options: RequestOptions,
+): Promise<RequestResponse> => {
+  if (options.client === "web") return requestWithWebClient(uri, data, options);
+  const headers: Record<string, string> = {};
+  const ip = options.realIP || options.ip || "";
+  if (ip) {
+    headers["X-Real-IP"] = ip;
+    headers["X-Forwarded-For"] = ip;
+  }
+
+  let crypto: CryptoMode | "" = options.crypto ?? "";
+  if (crypto === "") crypto = "eapi";
+
+  /** 归一化 cookie 到对象并做一次补全 */
+  let cookie: Record<string, string> =
+    typeof options.cookie === "string" ? cookieToJson(options.cookie) : options.cookie || {};
+  cookie = processCookieObject(cookie, crypto);
+  headers["Cookie"] = cookieObjToString(cookie);
+
+  const csrfToken = csrfFrom(cookie);
+  const useER = toBoolean(
+    options.e_r !== undefined ? options.e_r : data.e_r !== undefined ? data.e_r : ENCRYPT_RESPONSE,
+  );
+  data.e_r = useER;
+
+  let antiCheatToken = "";
+  if (options.checkToken) {
+    antiCheatToken = await getAntiCheatTokenV3();
+  }
+
+  let url = "";
+  let xeapiGeneration: number | undefined;
+  let encryptData: Record<string, string | number | boolean> | typeof data;
+
+  switch (crypto) {
+    case "weapi": {
+      headers["Referer"] = options.domain || DOMAIN;
+      headers["User-Agent"] = options.ua || chooseUserAgent("weapi");
+      (data as Record<string, unknown>).csrf_token = csrfToken;
+      if (options.checkToken && antiCheatToken) {
+        headers["X-antiCheatToken"] = antiCheatToken;
+      }
+      encryptData = encrypt.weapi(data);
+      url = (options.domain || DOMAIN) + "/weapi/" + uri.slice(5);
+      break;
+    }
+    case "linuxapi": {
+      headers["User-Agent"] = options.ua || chooseUserAgent("linuxapi", "linux");
+      encryptData = encrypt.linuxapi({
+        method: "POST",
+        url: (options.domain || DOMAIN) + uri,
+        params: data,
+      });
+      url = (options.domain || DOMAIN) + "/api/linux/forward";
+      break;
+    }
+    case "xeapi": {
+      const session = getXeapiSession();
+      xeapiGeneration = session.generation;
+      const publicKeyState = await ensureXeapiKey(cookie.deviceId);
+      const xeapiOs = cookie.os === "android" ? cookie.os : "android";
+      const xeapiAppver = cookie.os === "android" && cookie.appver ? cookie.appver : "9.1.65";
+      const xeapiOsver = cookie.os === "android" && cookie.osver ? cookie.osver : "16";
+      const xeapiBuildver = cookie.buildver || Date.now().toString().slice(0, 10);
+      headers["User-Agent"] = options.ua || chooseUserAgent("api", "android");
+      headers["X-Client-Enc-State"] = "ENCRYPTED";
+      headers["x-aeapi"] = "true";
+      headers["x-deviceid"] = cookie.deviceId;
+      headers["x-os"] = xeapiOs;
+      headers["x-osver"] = xeapiOsver;
+      headers["x-appver"] = xeapiAppver;
+      headers["x-sdeviceid"] = cookie.sDeviceId || cookie.deviceId;
+      headers["x-buildver"] = xeapiBuildver;
+      if (cookie.MUSIC_U) headers["x-music-u"] = cookie.MUSIC_U;
+      if (options.checkToken && antiCheatToken) {
+        headers["X-antiCheatToken"] = antiCheatToken;
+      }
+      headers["Cookie"] = cookieObjToString({
+        ...cookie,
+        os: xeapiOs,
+        osver: xeapiOsver,
+        appver: xeapiAppver,
+        buildver: xeapiBuildver,
+        sDeviceId: cookie.sDeviceId || cookie.deviceId,
+      });
+      url = (options.domain || XEAPI_DOMAIN) + "/xeapi/" + uri.slice(5);
+      encryptData = encrypt.xeapi(uri, data, {
+        publicKeyState,
+        sessionId: session.sessionId,
+        sessionKey: session.sessionKey,
+        appver: xeapiAppver,
+        deviceId: cookie.deviceId,
+        os: xeapiOs,
+        uid: cookie.uid || cookie.userId || "",
+      });
+      break;
+    }
+    case "eapi":
+    case "api": {
+      const header: Record<string, string> = {
+        osver: cookie.osver,
+        deviceId: cookie.deviceId,
+        os: cookie.os,
+        appver: cookie.appver,
+        versioncode: cookie.versioncode || "140",
+        mobilename: cookie.mobilename || "",
+        buildver: cookie.buildver || Date.now().toString().slice(0, 10),
+        resolution: cookie.resolution || "1920x1080",
+        __csrf: csrfToken,
+        channel: cookie.channel,
+        requestId: generateRequestId(),
+      };
+      if (cookie.MUSIC_U) header.MUSIC_U = cookie.MUSIC_U;
+      if (cookie.MUSIC_A) header.MUSIC_A = cookie.MUSIC_A;
+      if (crypto === "eapi" && cookie.NMTID) header.NMTID = cookie.NMTID;
+      if (options.checkToken && antiCheatToken) {
+        header["X-antiCheatToken"] = antiCheatToken;
+        headers["X-antiCheatToken"] = antiCheatToken;
+      }
+      headers["Cookie"] = cookieObjToString(header);
+      headers["User-Agent"] =
+        options.ua || (cookie.os === "osx" ? OSX_USER_AGENT : chooseUserAgent("api", "iphone"));
+
+      if (crypto === "eapi") {
+        (data as Record<string, unknown>).header = header;
+        encryptData = encrypt.eapi(uri, data);
+        url = (options.domain || EAPI_DOMAIN) + "/eapi/" + uri.slice(5);
+      } else {
+        url = (options.domain || API_DOMAIN) + uri;
+        encryptData = data;
+      }
+      break;
+    }
+    default:
+      throw new Error(`Unknown crypto: ${crypto}`);
+  }
+
+  const body = new URLSearchParams(encryptData as Record<string, string>).toString();
+  headers["Content-Type"] = "application/x-www-form-urlencoded";
+
+  const answer: RequestResponse = { status: 500, body: {}, cookie: [] };
+  const isXeapi = crypto === "xeapi";
+  const needDecrypt = isXeapi || ((crypto === "eapi" || crypto === "weapi") && useER);
+
+  let res: Response | null = null;
+  let lastErr: unknown = null;
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      res = await fetchWithProxy(url, {
+        method: "POST",
+        headers,
+        body,
+        signal: AbortSignal.timeout(8000),
+      });
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+      }
+    }
+  }
+
+  if (!res) {
+    answer.status = 502;
+    const cause = (lastErr as { cause?: { code?: string; message?: string } })?.cause;
+    const errorMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    const detailMsg = cause?.code ? `${errorMsg} (${cause.code})` : errorMsg;
+    answer.body = { code: 502, msg: detailMsg };
+    throw new NeteaseRequestError(answer);
+  }
+
+  /** 收集 set-cookie 并提取服务端下发的 NMTID */
+  const setCookie =
+    (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ??
+    (res.headers.get("set-cookie") ? [res.headers.get("set-cookie") as string] : []);
+  const cleanCookie = (x: string): string => x.replace(/\s*Domain=[^(;|$)]+;*/, "");
+
+  if (crypto === "eapi" && !cachedNmtid && nmtidRetriesLeft > 0 && !cookie.NMTID) {
+    nmtidRetriesLeft--;
+    answer.cookie = setCookie.map((x) => {
+      const match = x.match(/(?:^|;\s*)NMTID=([^;]+)/);
+      if (match) cachedNmtid = match[1];
+      return cleanCookie(x);
+    });
+  } else {
+    answer.cookie = setCookie.map(cleanCookie);
+  }
+
+  /** xeapi 会话密钥由响应头下发，缓存供后续请求复用 */
+  if (isXeapi) {
+    const ssid = res.headers.get("x-encr-ssid");
+    const sskey = res.headers.get("x-encr-sskey");
+    if (ssid && sskey && xeapiGeneration !== undefined) {
+      updateXeapiSession(ssid, sskey, xeapiGeneration);
+    }
+  }
+
+  let parsed: NeteaseBody;
+  try {
+    if (needDecrypt) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      parsed = (
+        isXeapi
+          ? encrypt.xeapiResDecrypt(buf)
+          : encrypt.eapiResDecrypt(buf.toString("hex").toUpperCase(), headers["x-aeapi"] === "true")
+      ) as NeteaseBody;
+    } else {
+      const text = await res.text();
+      parsed = JSON.parse(text);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("平台响应不是有效对象");
+    }
+    answer.body = parsed;
+    if (parsed?.code !== undefined) parsed.code = Number(parsed.code);
+    answer.status = Number(parsed?.code || res.status);
+    if (typeof parsed?.code === "number" && SPECIAL_STATUS_CODES.has(parsed.code)) {
+      answer.status = 200;
+    }
+  } catch {
+    answer.status = res.status >= 400 ? res.status : 502;
+    answer.body = { code: answer.status, msg: "平台响应解析失败" };
+  }
+
+  answer.status = answer.status > 100 && answer.status < 600 ? answer.status : 400;
+
+  if (answer.status === 200) return answer;
+  throw new NeteaseRequestError(answer);
+};
+
+/** 宽松的 boolean 解析 */
+const toBoolean = (val: unknown): boolean => {
+  if (typeof val === "boolean") return val;
+  if (val === "") return false;
+  return val === "true" || val === "1" || val === 1;
+};

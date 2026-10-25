@@ -1,0 +1,15 @@
+{
+  "name": "audio-engine",
+  "version": "0.1.0",
+  "main": "audio-engine.node",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "audio-engine",
+    "triples": {}
+  },
+  "scripts": {
+    "build": "napi build --release --no-const-enum",
+    "build:debug": "napi build --no-const-enum",
+    "test:integration": "node --test --test-concurrency=1 tests/*.cjs"
+  }
+}

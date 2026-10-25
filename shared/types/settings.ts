@@ -1,0 +1,557 @@
+import type { PluginsConfig, PluginQuality } from "./plugin";
+import type { HotkeyConfig } from "./hotkey";
+import type { DownloadLyricFormat, DownloadFolderScheme } from "./download";
+
+/** 支持的语言代码 */
+export type LocaleCode = "zh-CN" | "en-US";
+
+/** 语言选项 */
+export const LOCALES: { value: LocaleCode; label: string }[] = [
+  { value: "zh-CN", label: "简体中文" },
+  { value: "en-US", label: "English" },
+];
+
+/** 均衡器预设标识 */
+export type EqualizerPreset =
+  | "flat"
+  | "custom"
+  | "pop"
+  | "rock"
+  | "classical"
+  | "electronic"
+  | "bass"
+  | "vocal"
+  | "dance"
+  | "soft";
+
+/** 均衡器配置 */
+export interface EqualizerSettings {
+  /** 是否启用均衡器 */
+  enabled: boolean;
+  /** 当前选中的预设 */
+  preset: EqualizerPreset;
+  /** 10 频段增益（dB），范围 [-15, 15]，对应 31/62/125/250/500/1k/2k/4k/8k/16k Hz */
+  bands: number[];
+  /** 前级增益（dB），范围 [-12, 12] */
+  preamp: number;
+}
+
+/** 音频输出模式 */
+export type AudioOutputMode = "shared" | "exclusive";
+
+/** 播放器配置 */
+export interface PlayerSettings {
+  /** 加载后自动播放 */
+  autoPlay: boolean;
+  /** 记忆上次播放的歌曲 */
+  rememberLastTrack: boolean;
+  /** 是否启用渐入渐出 */
+  fadeEnabled: boolean;
+  /** 渐入渐出时长（毫秒） */
+  fadeDuration: number;
+  /** 输出设备名称，null 为系统默认 */
+  outputDevice: string | null;
+  /** 默认音量（0.0 ~ 1.0） */
+  volume: number;
+  /** 音量均衡（响度归一化） */
+  loudnessNormalization: boolean;
+  /** 音频输出模式：共享（默认）/ WASAPI 独占（仅 Windows） */
+  audioOutputMode: AudioOutputMode;
+  /** 播放页展开且正在播放时保持屏幕常亮 */
+  keepScreenAwake: boolean;
+  /** 均衡器配置 */
+  equalizer: EqualizerSettings;
+  /** 按 `{Track.id}|{歌词源}` 记忆的歌词偏移（ms，正值为歌词提前）；为 0 时不写入 */
+  lyricOffsets: Record<string, number>;
+}
+
+/** Discord 显示模式 */
+export type DiscordDisplayMode = "name" | "state" | "details";
+
+/** Discord RPC 配置 */
+export interface DiscordSettings {
+  /** 是否启用 */
+  enabled: boolean;
+  /** 暂停时是否显示状态 */
+  showWhenPaused: boolean;
+  /** 显示模式 */
+  displayMode: DiscordDisplayMode;
+}
+
+/** Last.fm 集成配置 */
+export interface LastfmSettings {
+  /** 总开关 */
+  enabled: boolean;
+  /** 记录播放（scrobble） */
+  scrobble: boolean;
+  /** 正在播放上报 */
+  nowPlaying: boolean;
+  /** 喜欢同步 */
+  loveSync: boolean;
+}
+
+/** 媒体集成配置 */
+export interface MediaSettings {
+  /** 是否启用系统媒体控件（SMTC / MPRIS / MPNowPlaying） */
+  systemMediaControls: boolean;
+  /** Discord RPC 配置 */
+  discord: DiscordSettings;
+}
+
+/** 桌面歌词对齐方式 */
+export type DesktopLyricAlign = "left" | "center" | "right" | "justify";
+
+/** 桌面歌词配置 */
+export interface DesktopLyricSettings {
+  /** 字号 */
+  fontSize: number;
+  /** 字重 */
+  fontWeight: number;
+  /** 字体 */
+  fontFamily: string;
+  /** 显示翻译 */
+  showTranslation: boolean;
+  /** 双行显示 */
+  doubleLine: boolean;
+  /** 对齐方式 */
+  align: DesktopLyricAlign;
+  /** 逐字高亮 */
+  wordByWord: boolean;
+  /** 自动生成逐字效果 */
+  autoGenerateWordByWord: boolean;
+  /** 已播放颜色 */
+  playedColor: string;
+  /** 未播放颜色 */
+  unplayedColor: string;
+  /** 描边颜色 */
+  strokeColor: string;
+  /** 是否启用文本背景遮罩 */
+  backgroundMask: boolean;
+  /** 文本背景遮罩颜色 */
+  backgroundMaskColor: string;
+  /** 是否常驻显示歌曲信息 */
+  alwaysShowSongInfo: boolean;
+  /** 拖拽时是否把窗口限制在屏幕工作区内 */
+  limitBounds: boolean;
+  /** 歌词行切换动画 */
+  animation: boolean;
+  /** 窗口置顶 */
+  alwaysOnTop: boolean;
+  /** 锁定：鼠标穿透、禁止拖动 */
+  locked: boolean;
+  /** 是否使用原生CSS窗口拖动 */
+  useCSSDrag: boolean;
+}
+
+/** 灵动岛歌词切换动画 */
+export type DynamicIslandTransition = "bounce" | "smooth";
+
+/** 灵动岛歌词配置 */
+export interface DynamicIslandSettings {
+  /** 缩放比例（0.5 ~ 2.0），1 = 100%；实际窗口高度由渲染端按基准高度 × 缩放算出 */
+  scale: number;
+  /** 字重 */
+  fontWeight: number;
+  /** 字体 */
+  fontFamily: string;
+  /** 逐字高亮 */
+  wordByWord: boolean;
+  /** 歌词行切换动画 */
+  transition: DynamicIslandTransition;
+  /** 已播放颜色 */
+  playedColor: string;
+  /** 未播放颜色 */
+  unplayedColor: string;
+  /** 背景颜色 */
+  backgroundColor: string;
+  /** 窗口置顶 */
+  alwaysOnTop: boolean;
+  /** 吸附时是否居中 */
+  snapCentered: boolean;
+  /** macOS 刘海融合 */
+  notchFusion: boolean;
+  /** 非遮挡模式 */
+  nonOcclusive: boolean;
+  /** 总是双行 */
+  doubleLine: boolean;
+  /** 显示翻译 */
+  showTranslation: boolean;
+  /** 是否使用原生CSS窗口拖动 */
+  useCSSDrag: boolean;
+}
+
+/** 任务栏歌词位置模式 */
+export type TaskbarLyricPosition = "auto" | "left" | "right";
+
+/** 任务栏歌词配色模式：taskbar=跟随任务栏主题，light=强制浅色，dark=强制深色 */
+export type TaskbarLyricColorMode = "taskbar" | "taskbarInverse" | "light" | "dark";
+
+/** 任务栏歌词配置（仅 Windows） */
+export interface TaskbarLyricSettings {
+  /** 位置：auto 根据任务栏对齐方式自动选择，left 固定左侧，right 固定右侧 */
+  position: TaskbarLyricPosition;
+  /** 宽度自动：开启时占满可用空间，关闭时按 maxWidth 限制 */
+  autoMaxWidth: boolean;
+  /** 根据当前歌词与悬浮控件动态调整真实窗口宽度 */
+  autoAdjustOccupiedSpace: boolean;
+  /** 最大宽度（逻辑像素）；仅在 autoMaxWidth 关闭时生效；超出可用空间时仍以可用空间为准 */
+  maxWidth: number;
+  /** 左边距（逻辑像素），从可用空间左侧扣除 */
+  leftMargin: number;
+  /** 右边距（逻辑像素），从可用空间右侧扣除 */
+  rightMargin: number;
+  /** 配色模式 */
+  colorMode: TaskbarLyricColorMode;
+  /** 获焦时显示半透明背景 */
+  showBackground: boolean;
+  /** 双行显示（歌词 + 翻译 / 下一行） */
+  doubleLine: boolean;
+  /** 显示翻译（doubleLine 开启时，副行优先显示翻译，没有翻译则回退到下一行） */
+  showTranslation: boolean;
+  /** 显示封面 */
+  showCover: boolean;
+  /** 逐字高亮 */
+  wordByWord: boolean;
+  /** 字号（逻辑像素） */
+  fontSize: number;
+  /** 字重 */
+  fontWeight: number;
+  /** 字体 */
+  fontFamily: string;
+}
+
+/** 音乐库配置 */
+export interface LibrarySettings {
+  /** 扫描目录列表 */
+  scanDirs: string[];
+}
+
+/** 流媒体总开关 */
+export interface StreamingSettings {
+  /** 启用流媒体；关闭后侧边栏隐藏入口 */
+  enabled: boolean;
+}
+
+/** 外部 API 服务配置 */
+export interface ExternalApiSettings {
+  /** 总开关 */
+  enabled: boolean;
+  /** WebSocket 子开关 */
+  wsEnabled: boolean;
+  /** 允许局域网访问；关闭时仅监听 127.0.0.1 */
+  allowLan: boolean;
+  /** 监听端口 */
+  port: number;
+}
+
+/** MCP 服务配置 */
+export interface McpSettings {
+  /** 服务开关 */
+  enabled: boolean;
+  /** 仅本机监听的端口 */
+  port: number;
+  /** 本机客户端连接密钥，由主进程首次使用时生成 */
+  accessKey: string;
+}
+
+/** 网络代理协议 */
+export type NetworkProxyProtocol = "off" | "http" | "https" | "socks5";
+
+/** 网络代理配置 */
+export interface NetworkProxySettings {
+  /** 代理协议；off 时不改变原始请求路径 */
+  protocol: NetworkProxyProtocol;
+  /** 代理服务器地址 */
+  host: string;
+  /** 代理服务器端口 */
+  port: number;
+}
+
+/** 外部 API 服务运行时状态 */
+export interface ExternalApiStatus {
+  /** 是否正在监听 */
+  listening: boolean;
+  /** 实际生效的局域网开关（监听时绑定的模式，与配置项比对判断是否待重启） */
+  allowLan: boolean;
+  /** 展示用主机地址：仅本机时为 127.0.0.1，开放局域网时为本机局域网 IP */
+  host: string | null;
+  /** 实际监听端口 */
+  port: number | null;
+  /** 上次启动失败的错误 */
+  error: { code: string; message: string } | null;
+}
+
+/** MCP 服务运行时状态 */
+export interface McpStatus {
+  /** 是否正在监听 */
+  listening: boolean;
+  /** 实际监听端口 */
+  port: number | null;
+  /** 上次启动失败的错误 */
+  error: { code: string; message: string } | null;
+}
+
+/** 生成 AI 客户端配置所需的动态参数 */
+export interface McpClientConfigParams {
+  /** MCP 服务实际使用或即将使用的端口 */
+  port: number;
+  /** 本机客户端连接密钥 */
+  accessKey: string;
+}
+
+/** 外部 AI Agent MCP 客户端应用 */
+export interface McpAgentApp {
+  /** 客户端应用标识 */
+  id: string;
+  /** 外部 AI Agent MCP 客户端应用显示名称 */
+  name: string;
+  /** 配置文件路径 */
+  configPath: string;
+  /** 是否已配置 splayer-next */
+  configured: boolean;
+  /** 是否支持自动写入配置 */
+  injectable: boolean;
+}
+
+/** 在线歌词服务配置 */
+export interface OnlineLyricSettings {
+  /** 启用在线 TTML 歌词 */
+  enableOnlineTTMLLyric: boolean;
+  /** AMLL TTML DB 服务地址，需含 %s 占位符 */
+  amllDbServer: string;
+}
+
+/** 本地歌词配置 */
+export interface LocalLyricSettings {
+  /** 启用本地 TTML 歌词库：从指定目录按元信息匹配 .ttml，命中优先于在线源 */
+  enableLocalTTMLOverride: boolean;
+  /** 本地 TTML 歌词库目录 */
+  repoDir: string;
+}
+
+/** 歌曲缓存配置 */
+export interface SongCacheSettings {
+  /** 歌曲缓存总开关 */
+  enabled: boolean;
+  /** 是否缓存个人流媒体服务器歌曲 */
+  cacheStreaming: boolean;
+  /** 上限（GB），0 表示不限制；超限按 LRU 淘汰 */
+  sizeLimitGb: number;
+}
+
+/** 缓存配置 */
+export interface CacheSettings {
+  /** 自定义缓存目录；null 使用默认 {userData}/app-data/cache */
+  dir: string | null;
+  /** 歌曲文件级缓存 */
+  songCache: SongCacheSettings;
+}
+
+/** 下载配置 */
+export interface DownloadSettings {
+  /** 下载功能总开关；关闭后隐藏应用内所有下载入口，下载设置仍可预先配置 */
+  enabled: boolean;
+  /** 下载目录；null 使用系统下载目录下的应用子目录 */
+  dir: string | null;
+  /** 下载音质 */
+  quality: PluginQuality;
+  /** 模拟播放下载：NCM 用播放接口替代下载接口，避免占用每日下载次数 */
+  usePlaybackForDownload: boolean;
+  /** 文件名模板，支持 {artist} {title} {album}；不含子目录 */
+  fileTemplate: string;
+  /** 文件智能分类：按规则分子文件夹 */
+  folderScheme: DownloadFolderScheme;
+  /** 重名处理策略 */
+  overwritePolicy: "rename" | "overwrite" | "skip";
+  /** 内嵌封面 */
+  embedCover: boolean;
+  /** 内嵌标题/艺术家/专辑等元信息 */
+  embedMeta: boolean;
+  /** 内嵌歌词到标签 */
+  embedLyric: boolean;
+  /** 额外保存同名歌词文件 */
+  writeLrc: boolean;
+  /** 额外保存完整 TTML */
+  saveTtml: boolean;
+  /** 保存 / 内嵌的歌词格式 */
+  lyricFileFormat: DownloadLyricFormat;
+}
+
+/** VoiceHub 桌面端播放显示模式 */
+export type VoiceHubMode = "display" | "audio" | "site";
+
+/** 到点弹窗展示的视图 */
+export type VoiceHubPopupView = "desktopLyric" | "main";
+
+/** VoiceHub 集成配置 */
+export interface VoiceHubSettings {
+  /** 总开关：关闭后不轮询排期、不弹窗 */
+  enabled: boolean;
+  /** VoiceHub 服务端地址（站点根 URL，不含末尾斜杠） */
+  baseUrl: string;
+  /** display=仅按排期时间轴显示歌词；audio=桌面解析直链并用引擎出声；site=完整站点窗口 */
+  mode: VoiceHubMode;
+  /** 排期轮询间隔（秒），最小 15 */
+  pollIntervalSec: number;
+  /** 到达播放时段起点是否自动弹出窗口 */
+  autoPopup: boolean;
+  /** 自动弹窗使用的视图 */
+  popupView: VoiceHubPopupView;
+  /** 关注的播放时段 ID；"all" 表示当日全部时段 */
+  playTimeId: number | "all";
+  /** 管理员预览草稿排期时携带的站点 Cookie（含鉴权），空字符串表示匿名公开口径 */
+  cookie: string;
+}
+
+/** 主窗口几何（旧版持久化数据，仅供迁移到 Electron 内置窗口状态） */
+export interface MainWindowState {
+  width: number;
+  height: number;
+  x: number | null;
+  y: number | null;
+  maximized: boolean;
+}
+
+/** 桌面歌词窗口几何 */
+export interface DesktopLyricWindowState {
+  width: number;
+  height: number;
+  x: number | null;
+  y: number | null;
+  visible: boolean;
+}
+
+/** 灵动岛窗口几何 */
+export interface DynamicIslandWindowState {
+  /** snapped: 吸附到屏幕顶部；floating: 自由位置 */
+  mode: "snapped" | "floating";
+  /** floating: 窗口左上角 x；snapped + 非居中: 窗口中心点 x（让宽度变化时围绕中心对称伸缩） */
+  x: number | null;
+  /** floating: 窗口左上角 y；snapped + 非居中: 当时所在屏 workArea.y（用于找回所在屏） */
+  y: number | null;
+  visible: boolean;
+}
+
+/** 任务栏歌词窗口状态 */
+export interface TaskbarLyricWindowState {
+  visible: boolean;
+}
+
+/** 窗口几何状态 */
+export interface WindowStates {
+  main: MainWindowState;
+  desktopLyric: DesktopLyricWindowState;
+  dynamicIsland: DynamicIslandWindowState;
+  taskbarLyric: TaskbarLyricWindowState;
+}
+
+/** 应用更新通道候选值，同时作为运行时校验名单 */
+export const UPDATE_CHANNELS = ["stable", "beta", "alpha", "nightly"] as const;
+
+/** 应用更新通道 */
+export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
+
+/** 应用更新配置 */
+export interface AppUpdateSettings {
+  /** 自动检查更新 */
+  autoCheck: boolean;
+  /** 更新通道：stable 正式通道 / beta 预览通道 / alpha 内测通道 / nightly 持续构建通道 */
+  channel: UpdateChannel;
+}
+
+/** 播放日志上报协议 */
+export type NeteaseScrobbleMode = "legacy" | "ncbl";
+
+/** KG 登录版本 */
+export type KugouLoginVersion = "standard" | "concept";
+
+/** 后端配置汇总 */
+export interface SystemConfig {
+  /** 播放器配置 */
+  player: PlayerSettings;
+  /** 媒体集成配置 */
+  media: MediaSettings;
+  /** 音乐库配置 */
+  library: LibrarySettings;
+  /** 桌面歌词配置 */
+  desktopLyric: DesktopLyricSettings;
+  /** 灵动岛歌词配置 */
+  dynamicIsland: DynamicIslandSettings;
+  /** 任务栏歌词配置（仅 Windows） */
+  taskbarLyric: TaskbarLyricSettings;
+  /** 在线歌词服务配置 */
+  lyric: OnlineLyricSettings;
+  /** 本地歌词配置 */
+  localLyric: LocalLyricSettings;
+  /** 缓存配置 */
+  cache: CacheSettings;
+  /** 下载配置 */
+  download: DownloadSettings;
+  /** 流媒体总开关 */
+  streaming: StreamingSettings;
+  /** VoiceHub 集成配置 */
+  voicehub: VoiceHubSettings;
+  /** Last.fm 集成配置 */
+  lastfm: LastfmSettings;
+  /** 外部 API 服务（HTTP + WS） */
+  externalApi: ExternalApiSettings;
+  /** AI 集成使用的 MCP 服务 */
+  mcp: McpSettings;
+  /** 应用更新配置 */
+  update: AppUpdateSettings;
+  /** 系统配置 */
+  system: {
+    /** 记忆窗口状态 */
+    rememberWindowState: boolean;
+    /** 开启无边框主窗口 */
+    borderlessWindow: boolean;
+    /** 在任务栏显示播放进度 */
+    taskbarProgress: boolean;
+    /** 悬停任务栏时以专辑封面作为窗口预览（仅 Windows） */
+    taskbarThumbnailCover: boolean;
+    /** 界面缩放百分比（50-200，默认 100） */
+    uiZoom: number;
+    /** 首启引导是否已完成 */
+    onboardingCompleted: boolean;
+    /** 用户已同意的协议版本号 */
+    agreedAgreementVersion: number;
+    /** NCM 请求注入国内 IP（X-Real-IP/X-Forwarded-For） */
+    neteaseRealIp: boolean;
+    /** KG 登录版本（standard 标准版 / concept 概念版） */
+    kugouLoginVersion: KugouLoginVersion;
+    /** 网络代理配置 */
+    networkProxy: NetworkProxySettings;
+    /** 听歌打卡开关 */
+    neteaseScrobbleEnabled: boolean;
+    /** 播放日志上报协议 */
+    neteaseScrobbleMode: NeteaseScrobbleMode;
+    /** 注册为 Orpheus 协议处理程序，抢占网页端「用客户端打开」 */
+    registerOrpheusProtocol: boolean;
+  };
+  /** 窗口几何状态（运行时自动记录，非用户主动配置） */
+  windowStates: WindowStates;
+  /** 插件系统配置 */
+  plugins: PluginsConfig;
+  /** 快捷键配置（独立于其他配置，由 hotkey 模块独占） */
+  hotkeys: HotkeyConfig;
+}
+
+/** 配置 API */
+export interface ConfigApi {
+  /** 获取单个配置项（点号路径，如 "player.fadeDuration"） */
+  get: (keyPath: string) => Promise<unknown>;
+  /** 写入单个配置项 */
+  set: (keyPath: string, value: unknown) => Promise<void>;
+  /** 获取全部配置 */
+  getAll: () => Promise<SystemConfig>;
+  /** 重置为默认值 */
+  reset: () => Promise<void>;
+  /** 整盘替换主进程配置 */
+  replaceAll: (config: unknown) => Promise<void>;
+  /** 写入用户选择的备份文件 */
+  exportToFile: (payload: unknown) => Promise<{ ok: boolean; reason?: "canceled" | "writeFailed" }>;
+  /** 读取用户选择的备份文件 */
+  importFromFile: () => Promise<
+    { ok: true; data: unknown } | { ok: false; reason: "canceled" | "readFailed" | "parseFailed" }
+  >;
+}
